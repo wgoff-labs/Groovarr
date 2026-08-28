@@ -8,6 +8,11 @@ export interface Artist {
   added_at: string;
 }
 
+export interface Folder {
+  id: number;
+  path: string;
+}
+
 export interface CheckResult {
   artist_name: string;
   new_albums_found: number;
@@ -92,4 +97,8 @@ export const api = {
   },
 
   downloads: () => fetchJSON<PruneResult[]>('/api/downloads'),
+
+  folders: {
+    list: () => fetchJSON<Folder[]>('/api/folders'),
+  },
 };

@@ -32,10 +32,11 @@ type Config struct {
 	LastFMAPIKey        string
 
 	// Lidarr
-	LidarrURL            string
-	LidarrAPIKey         string
-	LidarrQualityProfile string
-	LidarrRootFolder     string
+	LidarrURL              string
+	LidarrAPIKey           string
+	LidarrQualityProfile   string
+	LidarrRootFolders      []string // optional, scanned from Lidarr if empty
+	LidarrDefaultRootFolder string  // which folder to use if none specified per-artist
 
 	// Download
 	DownloadMode string // "tracks" or "album"
@@ -61,11 +62,11 @@ func Load() *Config {
 		CommandPrefix:        getEnv("COMMAND_PREFIX", "?"),
 		PopularityThreshold:  intEnv("POPULARITY_THRESHOLD", 60),
 		LastFMAPIKey:         getEnv("LASTFM_API_KEY", ""),
-		LidarrURL:            getEnv("LIDARR_URL", "http://localhost:8686"),
-		LidarrAPIKey:         getEnv("LIDARR_API_KEY", ""),
-		LidarrQualityProfile: getEnv("LIDARR_QUALITY_PROFILE", "Standard"),
-		LidarrRootFolder:     getEnv("LIDARR_ROOT_FOLDER", ""),
-		DownloadMode:         getEnv("DOWNLOAD_MODE", "tracks"),
+		LidarrURL:              getEnv("LIDARR_URL", "http://localhost:8686"),
+		LidarrAPIKey:           getEnv("LIDARR_API_KEY", ""),
+		LidarrQualityProfile:   getEnv("LIDARR_QUALITY_PROFILE", "Standard"),
+		LidarrDefaultRootFolder: getEnv("LIDARR_DEFAULT_ROOT_FOLDER", ""),
+		DownloadMode:           getEnv("DOWNLOAD_MODE", "tracks"),
 		DailyCheckCron:       getEnv("DAILY_CHECK_CRON", "0 9 * * *"),
 		Timezone:             getEnv("TIMEZONE", "America/Detroit"),
 		DBPath:               getEnv("DB_PATH", "/data/groovarr.db"),
@@ -92,6 +93,15 @@ func Load() *Config {
 			p = strings.TrimSpace(p)
 			if p != "" {
 				c.DiscordAllowedUsers = append(c.DiscordAllowedUsers, p)
+			}
+		}
+	}
+
+	if v := os.Getenv("LIDARR_ROOT_FOLDERS"); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				c.LidarrRootFolders = append(c.LidarrRootFolders, p)
 			}
 		}
 	}

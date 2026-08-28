@@ -250,7 +250,7 @@ func (b *Bot) runAdd(ctx *CommandContext, name string) {
 		return
 	}
 
-	rootFolder := b.cfg.LidarrRootFolder
+	rootFolder := b.cfg.LidarrDefaultRootFolder
 	if rootFolder == "" {
 		rootFolder = "Warren's Music"
 	}

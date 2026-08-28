@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { api, Artist } from '@/lib/api';
+import { api, Artist, Folder } from '@/lib/api';
 
 export default function ArtistsPage() {
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const loadArtists = useCallback(async () => {
     setLoading(true);
     try {
       setArtists(await api.artists.list());
@@ -22,16 +24,48 @@ export default function ArtistsPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadFolders = useCallback(async () => {
+    try {
+      const folderList = await api.folders.list();
+      setFolders(folderList);
+      // Auto-select first folder if none selected yet
+      if (!selectedFolder && folderList.length > 0) {
+        setSelectedFolder(folderList[0].path);
+      }
+    } catch (e: any) {
+      // Silently fail - we can still use default folder
+      console.warn("Could not load folders:", e.message);
+    }
+  }, [selectedFolder]);
+
+  useEffect(() => {
+    loadArtists();
+    loadFolders();
+    // Refresh folders every 5 minutes in case they change in Lidarr
+    const interval = setInterval(loadFolders, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadArtists, loadFolders]);
 
   const addArtist = async () => {
     if (!newName.trim()) return;
+    if (!selectedFolder) {
+      setError("Please select a root folder");
+      return;
+    }
     setAdding(true);
     try {
-      await api.check(newName.trim()); // triggers add via backend
+      // Call backend with explicit folder
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'}/api/artists`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName.trim(), root_folder: selectedFolder })
+      });
       setNewName('');
-      setActionMsg('Artist queued for next check.');
+      setSelectedFolder(null); // Reset selection after add
+      setActionMsg('Artist added successfully.');
       setTimeout(() => setActionMsg(null), 4000);
+      // Refresh artist list
+      await loadArtists();
     } catch (e: any) {
       setError(`Failed to add artist: ${e.message}`);
     }
@@ -73,25 +107,42 @@ export default function ArtistsPage() {
       )}
 
       {/* Add artist */}
-      <div className="card">
-        <h2 className="text-lg font-semibold mb-3">➕ Add Artist</h2>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="Artist name..."
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addArtist()}
-            className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
-          />
-          <button onClick={addArtist} disabled={adding || !newName.trim()} className="btn-primary">
-            {adding ? '⏳...' : 'Add'}
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Searches Deezer &amp; Last.fm, adds to Lidarr on next check.
-        </p>
-      </div>
+            <div className="card">
+              <h2 className="text-lg font-semibold mb-3">➕ Add Artist</h2>
+              <div className="space-y-4">
+                <div className="flex gap-3 items-end">
+                  <input
+                    type="text"
+                    placeholder="Artist name..."
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addArtist()}
+                    className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <select
+                    value={selectedFolder ?? ""}
+                    onChange={(e) => setSelectedFolder(e.target.value)}
+                    disabled={folders.length === 0}
+                    className="bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="" disabled={folders.length === 0}>
+                      {folders.length === 0 ? "Loading folders..." : "Select folder"}
+                    </option>
+                    {folders.map(f => (
+                      <option key={f.id} value={f.path}>
+                        {f.path}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={addArtist} disabled={adding || !newName.trim() || !selectedFolder} className="btn-primary">
+                  {adding ? "⏳..." : "Add"}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Searches Deezer & Last.fm, adds to Lidarr immediately to selected folder.
+              </p>
+            </div>
 
       {/* Artist list */}
       <div className="card">

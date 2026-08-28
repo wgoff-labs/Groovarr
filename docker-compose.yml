@@ -24,7 +24,8 @@ services:
       - LIDARR_URL=${LIDARR_URL:-http://localhost:8686}
       - LIDARR_API_KEY=${LIDARR_API_KEY:-}
       - LIDARR_QUALITY_PROFILE=${LIDARR_QUALITY_PROFILE:-Standard}
-      - LIDARR_ROOT_FOLDER=${LIDARR_ROOT_FOLDER:-}
+      - LIDARR_ROOT_FOLDERS=${LIDARR_ROOT_FOLDERS:-}
+      - LIDARR_DEFAULT_ROOT_FOLDER=${LIDARR_DEFAULT_ROOT_FOLDER:-}
       - DOWNLOAD_MODE=${DOWNLOAD_MODE:-tracks}
       - DAILY_CHECK_CRON=${DAILY_CHECK_CRON:-0 9 * * *}
       - TIMEZONE=${TIMEZONE:-America/Detroit}
@@ -56,6 +57,11 @@ services:
       - "3000:3000"
     networks:
       - groovarr-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/_next/data/\_buildManifest.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   groovarr-net:

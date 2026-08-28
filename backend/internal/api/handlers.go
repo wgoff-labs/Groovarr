@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
@@ -26,6 +27,23 @@ func StatusHandler(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"service": "groovarr",
 	})
+}
+
+// FoldersHandler returns all Lidarr root folders (scans Lidarr on every call).
+// Also includes the env-allowed subset if LIDARR_ROOT_FOLDERS is set.
+func FoldersHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := clients.NewLidarrClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	folders, err := c.GetRootFolders()
+	if err != nil {
+		http.Error(w, "Lidarr unreachable: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(folders)
 }
 
 // CheckHandler triggers a manual popularity check.
