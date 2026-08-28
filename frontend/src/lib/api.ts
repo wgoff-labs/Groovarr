@@ -35,7 +35,11 @@ export interface PruneResult {
   error?: string;
 }
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+// In production, frontend and API are served from the same origin (single binary)
+// In development, this points to the standalone backend
+const BASE = typeof window !== 'undefined' 
+  ? ''  // Browser: use same origin (relative URLs)
+  : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080');
 
 async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

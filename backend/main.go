@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/api"
 	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/discord"
+	"github.com/groovarr/groovarr/backend/internal/frontend"
 	"github.com/groovarr/groovarr/backend/internal/scheduler"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
@@ -44,15 +46,21 @@ func main() {
 	mux.HandleFunc("/api/keep", api.KeepHandler)
 	mux.HandleFunc("/api/downloads", api.DownloadStatusHandler)
 
-	// Serve static files from frontend build (embedded or mounted)
-	// In dev, we proxy to Vite dev server; in prod, we serve from ./frontend/dist
-	// For now, we just serve a placeholder.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Groovarr backend is running. Frontend not served yet."))
+	// Serve embedded frontend (handles all non-API routes including SPA routing)
+	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
+	// We need to use a custom handler that wraps the mux and routes API vs frontend.
+	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// API requests go to the mux (which has the API routes)
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		// Everything else goes to the embedded frontend
+		frontend.NewHandler()(w, r)
 	})
 
 	// CORS wrapper for dev
-	handler := corsMiddleware(mux)
+	handler := corsMiddleware(mainHandler)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
