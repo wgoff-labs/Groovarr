@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/config"
 )
@@ -59,7 +60,7 @@ type DeezerClient struct {
 }
 
 func NewDeezerClient() *DeezerClient {
-	return &DeezerClient{client: config.DefaultHTTPClient}
+	return &DeezerClient{client: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (c *DeezerClient) get(path string) (any, error) {

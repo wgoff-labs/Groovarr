@@ -1,34 +1,164 @@
 package config
 
 import (
+	"net/http"
 	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
-// Config holds the essential environment-driven settings.
-// All other configuration is stored in the database.
+// Config holds all configuration, from env vars and the database.
 type Config struct {
-	Port        string
+	// Server
+	Port string
+
+	// Auth (basic, optional - if set, enables login)
 	AuthUsername string
 	AuthPassword string
-	DBPath      string
-	DBSalt      string // optional, for future use (e.g., DB encryption)
+
+	// Discord (optional)
+	DiscordToken           string
+	DiscordHomeChannel    int64
+	DiscordAllowedChans   []int64 // empty = allow all
+	DiscordAllowedUsers   []string // empty = depends on DiscordAllowAllUsers
+	DiscordAllowAllUsers  bool
+	DiscordAutoThread     bool
+	DiscordRequireMention bool
+	CommandPrefix         string
+
+	// Music APIs
+	PopularityThreshold int
+	LastFMAPIKey        string
+
+	// Lidarr
+	LidarrURL              string
+	LidarrAPIKey           string
+	LidarrQualityProfile   string
+	LidarrRootFolders      []string // optional, scanned from Lidarr if empty
+	LidarrDefaultRootFolder string  // which folder to use if none specified per-artist
+
+	// Download
+	DownloadMode string // "tracks" or "album"
+
+	// Scheduler
+	DailyCheckCron string
+	Timezone       string
+
+	// Database
+	DBPath string
+	DBSalt string // optional, for future use (e.g., DB encryption)
 }
 
-// Load reads only essential env vars.
-// All other configuration is loaded from the database via the settings service.
+// global holds the singleton configuration.
+var global *Config
+
+// Load returns the global configuration, initializing it from environment variables if needed.
 func Load() *Config {
-	return &Config{
-		Port:        getEnv("PORT", "8080"),
-		AuthUsername: getEnv("AUTH_USERNAME", ""),
-		AuthPassword: getEnv("AUTH_PASSWORD", ""),
-		DBPath:      getEnv("DB_PATH", "/data/groovarr.db"),
-		DBSalt:      getEnv("DB_SALT", ""),
+	if global == nil {
+		global = &Config{
+			Port:        getEnv("PORT", "8080"),
+			AuthUsername: getEnv("AUTH_USERNAME", ""),
+			AuthPassword: getEnv("AUTH_PASSWORD", ""),
+			DiscordToken:         getEnv("DISCORD_BOT_TOKEN", ""),
+			DiscordHomeChannel:   int64(getEnvInt("DISCORD_HOME_CHANNEL", 0)),
+			DiscordAllowAllUsers: getEnvBool("DISCORD_ALLOW_ALL_USERS", true),
+			DiscordAutoThread:    getEnvBool("DISCORD_AUTO_THREAD", false),
+			DiscordRequireMention:getEnvBool("DISCORD_REQUIRE_MENTION", false),
+			CommandPrefix:        getEnv("COMMAND_PREFIX", "?"),
+			PopularityThreshold:  getEnvInt("POPULARITY_THRESHOLD", 60),
+			LastFMAPIKey:         getEnv("LASTFM_API_KEY", ""),
+			LidarrURL:            getEnv("LIDARR_URL", "http://localhost:8686"),
+			LidarrAPIKey:         getEnv("LIDARR_API_KEY", ""),
+			LidarrQualityProfile: getEnv("LIDARR_QUALITY_PROFILE", "Standard"),
+			LidarrRootFolders:    getEnvSlice("LIDARR_ROOT_FOLDERS"),
+			LidarrDefaultRootFolder: getEnv("LIDARR_DEFAULT_ROOT_FOLDER", ""),
+			DownloadMode:         getEnv("DOWNLOAD_MODE", "tracks"),
+			DailyCheckCron:       getEnv("DAILY_CHECK_CRON", "0 9 * * *"),
+			Timezone:             getEnv("TIMEZONE", "America/Detroit"),
+			DBPath:               getEnv("DB_PATH", "/data/groovarr.db"),
+			DBSalt:               getEnv("DB_SALT", ""),
+		}
 	}
+	return global
 }
 
+// LoadFromDB loads settings from the database and updates the global configuration.
+// It should be called after the database has been initialized.
+func LoadFromDB() error {
+	if global == nil {
+		global = Load()
+	}
+
+	// Load persistence threshold
+	if v, err := store.SettingGet("popularity_threshold"); err == nil && v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			global.PopularityThreshold = i
+		}
+	}
+
+	// Load download mode
+	if v, err := store.SettingGet("download_mode"); err == nil && v != "" {
+		if v == "tracks" || v == "album" {
+			global.DownloadMode = v
+		}
+	}
+
+	// Load default root folder
+	if v, err := store.SettingGet("default_root_folder"); err == nil && v != "" {
+		global.LidarrDefaultRootFolder = v
+	}
+
+	// Note: We do not reload Discord or Lidarr settings from the DB in this version
+	// to keep the initial implementation simple. They can be added later if needed.
+
+	return nil
+}
+
+// Helper functions to get environment variables with type conversion.
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
 }
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
+		}
+	}
+	return fallback
+}
+
+func getEnvSlice(key string) []string {
+	if v := os.Getenv(key); v != "" {
+		parts := strings.Split(v, ",")
+		result := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				result = append(result, p)
+			}
+		}
+		return result
+	}
+	return []string{}
+}
+
+// DefaultHTTPClient is a shared HTTP client with timeouts.
+var DefaultHTTPClient = &http.Client{Timeout: 30 * time.Second}

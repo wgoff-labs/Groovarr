@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/config"
 )
@@ -62,7 +63,7 @@ func NewLidarrClient() (*LidarrClient, error) {
 	return &LidarrClient{
 		baseURL:          strings.TrimSuffix(cfg.LidarrURL, "/"),
 		apiKey:           cfg.LidarrAPIKey,
-		client:           config.DefaultHTTPClient,
+		client:           &http.Client{Timeout: 30 * time.Second},
 		metaProfileCache: make(map[string]int),
 	}, nil
 }

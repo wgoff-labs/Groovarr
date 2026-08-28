@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/config"
 )
@@ -26,7 +27,7 @@ func NewLastFMClient() (*LastFMClient, error) {
 	}
 	return &LastFMClient{
 		apiKey: cfg.LastFMAPIKey,
-		client: config.DefaultHTTPClient,
+		client: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }
 

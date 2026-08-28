@@ -24,7 +24,7 @@ func main() {
 	log.Printf("Starting Groovarr (config: %+v)", cfg)
 
 	// Initialize database
-	if err := store.Init(cfg); err != nil {
+	if err := store.Init(cfg.DBPath); err != nil {
 		log.Fatalf("Database init failed: %v", err)
 	}
 	defer store.Close()

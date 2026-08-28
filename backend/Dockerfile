@@ -4,7 +4,7 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /build
 
 # Install CGO deps for SQLite
-RUN apk add --no-cache gcc musl-dev
+RUN apk add --no-cache gcc musl-dev git
 
 # Cache deps
 COPY go.mod go.sum ./
