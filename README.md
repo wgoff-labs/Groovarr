@@ -29,7 +29,7 @@ A self-hosted Lidarr monitor that only adds **popular** new releases to your mus
 1. In Portainer, create a new **Stack** from this `docker-compose.yml`
 2. Set environment variables in the **Environment** tab (copy from `.env.example`)
 3. Required: `LIDARR_API_KEY`, `LASTFM_API_KEY`
-4. Optional: `DISCORD_TOKEN`, `REPORT_CHANNEL_ID`
+4. Optional: `DISCORD_BOT_TOKEN`, `DISCORD_HOME_CHANNEL`, `DISCORD_ALLOWED_CHANNELS`, `DISCORD_ALLOWED_USERS`, `DISCORD_ALLOW_ALL_USERS`, `DISCORD_AUTO_THREAD`, `DISCORD_REQUIRE_MENTION`
 5. Deploy. Web UI: `http://<your-server-ip>:3000`. Backend: `:8080`.
 
 ## Local Development

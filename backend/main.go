@@ -63,9 +63,9 @@ func main() {
 	if cfg.DiscordToken != "" {
 		var berr error
 		discordBot, berr = discord.New(cfg.DiscordToken, func(report string) {
-			if cfg.ReportChannelID != 0 {
+			if cfg.DiscordHomeChannel != 0 {
 				if bot := discord.GetBot(); bot != nil {
-					if err := bot.SendReport(uint64(cfg.ReportChannelID), report); err != nil {
+					if err := bot.SendReport(report); err != nil {
 						log.Printf("Failed to send report to Discord: %v", err)
 					}
 				}
@@ -89,8 +89,8 @@ func main() {
 
 	// Create scheduler
 	sch := scheduler.New(func(report string) {
-		if discordBot != nil && cfg.ReportChannelID != 0 {
-			if err := discordBot.SendReport(uint64(cfg.ReportChannelID), report); err != nil {
+		if discordBot != nil && cfg.DiscordHomeChannel != 0 {
+			if err := discordBot.SendReport(report); err != nil {
 				log.Printf("Failed to send scheduled report to Discord: %v", err)
 			}
 		} else {

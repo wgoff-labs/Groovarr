@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,10 +18,14 @@ type Config struct {
 	AuthPassword string
 
 	// Discord
-	DiscordToken      string
-	ReportChannelID   int64
-	CommandPrefix     string
-	AutoThreadArchive int
+	DiscordToken           string
+	DiscordHomeChannel    int64
+	DiscordAllowedChans   []int64 // empty = allow all
+	DiscordAllowedUsers   []string // empty = depends on DiscordAllowAllUsers
+	DiscordAllowAllUsers  bool
+	DiscordAutoThread     bool
+	DiscordRequireMention bool
+	CommandPrefix         string
 
 	// Music APIs
 	PopularityThreshold int
@@ -49,9 +54,11 @@ func Load() *Config {
 		Port:                 getEnv("PORT", "8080"),
 		AuthUsername:         getEnv("AUTH_USERNAME", "admin"),
 		AuthPassword:         getEnv("AUTH_PASSWORD", "changeme"),
-		DiscordToken:         getEnv("DISCORD_TOKEN", ""),
+		DiscordToken:         getEnv("DISCORD_BOT_TOKEN", ""),
+		DiscordAllowAllUsers: boolEnv("DISCORD_ALLOW_ALL_USERS", true),
+		DiscordAutoThread:    boolEnv("DISCORD_AUTO_THREAD", false),
+		DiscordRequireMention: boolEnv("DISCORD_REQUIRE_MENTION", false),
 		CommandPrefix:        getEnv("COMMAND_PREFIX", "?"),
-		AutoThreadArchive:    10080, // 7 days in minutes
 		PopularityThreshold:  intEnv("POPULARITY_THRESHOLD", 60),
 		LastFMAPIKey:         getEnv("LASTFM_API_KEY", ""),
 		LidarrURL:            getEnv("LIDARR_URL", "http://localhost:8686"),
@@ -64,8 +71,29 @@ func Load() *Config {
 		DBPath:               getEnv("DB_PATH", "/data/groovarr.db"),
 	}
 
-	if v := os.Getenv("REPORT_CHANNEL_ID"); v != "" {
-		c.ReportChannelID, _ = strconv.ParseInt(v, 10, 64)
+	if v := os.Getenv("DISCORD_HOME_CHANNEL"); v != "" {
+		c.DiscordHomeChannel, _ = strconv.ParseInt(v, 10, 64)
+	}
+
+	if v := os.Getenv("DISCORD_ALLOWED_CHANNELS"); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if id, err := strconv.ParseInt(p, 10, 64); err == nil {
+				c.DiscordAllowedChans = append(c.DiscordAllowedChans, id)
+			}
+		}
+	}
+
+	if v := os.Getenv("DISCORD_ALLOWED_USERS"); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				c.DiscordAllowedUsers = append(c.DiscordAllowedUsers, p)
+			}
+		}
 	}
 
 	return c
@@ -82,6 +110,18 @@ func intEnv(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "y", "on":
+			return true
+		case "0", "false", "no", "n", "off":
+			return false
 		}
 	}
 	return fallback

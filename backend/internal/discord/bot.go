@@ -22,19 +22,37 @@ func SetGlobalBot(b *Bot) { globalBot = b }
 func GetBot() *Bot        { return globalBot }
 
 type Bot struct {
-	client       *bot.Client
+	client      *bot.Client
 	cfg         *config.Config
-	reportCh    snowflake.ID
+	homeCh      snowflake.ID
+	allowChans  map[snowflake.ID]struct{}
+	allowUsers  map[string]struct{}
+	allowAll    bool
+	autoThread  bool
+	requireMention bool
 	reportFn    func(string)
 }
 
 // New creates a new Discord bot.
 func New(token string, reportFn func(string)) (*Bot, error) {
 	cfg := config.Load()
+	allowChans := make(map[snowflake.ID]struct{}, len(cfg.DiscordAllowedChans))
+	for _, id := range cfg.DiscordAllowedChans {
+		allowChans[snowflake.ID(id)] = struct{}{}
+	}
+	allowUsers := make(map[string]struct{}, len(cfg.DiscordAllowedUsers))
+	for _, u := range cfg.DiscordAllowedUsers {
+		allowUsers[u] = struct{}{}
+	}
 	b := &Bot{
-		cfg:      cfg,
-		reportCh: snowflake.ID(cfg.ReportChannelID),
-		reportFn: reportFn,
+		cfg:           cfg,
+		homeCh:        snowflake.ID(cfg.DiscordHomeChannel),
+		allowChans:    allowChans,
+		allowUsers:    allowUsers,
+		allowAll:      cfg.DiscordAllowAllUsers,
+		autoThread:    cfg.DiscordAutoThread,
+		requireMention: cfg.DiscordRequireMention,
+		reportFn:      reportFn,
 	}
 
 	client, err := disgo.New(token,
@@ -59,11 +77,14 @@ func (b *Bot) Start() error                   { return b.client.OpenGateway(cont
 func (b *Bot) Stop() error                    { b.client.Close(context.TODO()); return nil }
 func (b *Bot) Client() *bot.Client            { return b.client }
 
-func (b *Bot) SendReport(channelID uint64, text string) error {
-	if channelID == 0 {
+func (b *Bot) SendReport(text string) error {
+	if b.homeCh == 0 {
 		return nil
 	}
-	ch := snowflake.ID(channelID)
+	return b.send(b.homeCh, text)
+}
+
+func (b *Bot) send(ch snowflake.ID, text string) error {
 	const maxLen = 1990
 	start := 0
 	for start < len(text) {
@@ -92,11 +113,42 @@ func (b *Bot) onMessageCreate(event *events.MessageCreate) {
 	if msg.Author.Bot || msg.Author.System {
 		return
 	}
-	if !strings.HasPrefix(msg.Content, "?") {
+
+	// Channel allowlist
+	if len(b.allowChans) > 0 {
+		if _, ok := b.allowChans[event.ChannelID]; !ok {
+			return
+		}
+	}
+
+	// User allowlist (only enforced if not allow-all and a list is provided)
+	if !b.allowAll && len(b.allowUsers) > 0 {
+		uid := event.Message.Author.ID.String()
+		uname := event.Message.Author.Username
+		_, byID := b.allowUsers[uid]
+		_, byName := b.allowUsers[uname]
+		if !byID && !byName {
+			return
+		}
+	}
+
+	// Mention or prefix check
+	if b.requireMention {
+		mentioned := false
+		for _, m := range msg.Mentions {
+			if m.ID == b.client.ID() {
+				mentioned = true
+				break
+			}
+		}
+		if !mentioned && !strings.HasPrefix(strings.TrimSpace(msg.Content), b.cfg.CommandPrefix) {
+			return
+		}
+	} else if !strings.HasPrefix(msg.Content, b.cfg.CommandPrefix) {
 		return
 	}
 
-	content := strings.TrimPrefix(msg.Content, "?")
+	content := strings.TrimPrefix(msg.Content, b.cfg.CommandPrefix)
 	parts := strings.Fields(content)
 	if len(parts) == 0 {
 		return
@@ -104,7 +156,23 @@ func (b *Bot) onMessageCreate(event *events.MessageCreate) {
 	cmd := strings.ToLower(parts[0])
 	args := parts[1:]
 
-	ctx := &CommandContext{event: event, bot: b, command: cmd, args: args}
+	// Auto-thread: if we're in the home channel and thread not already started
+	replyCh := event.ChannelID
+	if b.autoThread && b.homeCh != 0 && event.ChannelID == b.homeCh && msg.ThreadMetadata == nil && msg.Type != discord.MessageTypeThreadStarterMessage {
+		threadCreate := discord.ThreadCreateFromMessage{
+			Name:                fmt.Sprintf("cmd-%s", cmd),
+			AutoArchiveDuration: discord.AutoArchiveDurationWeek,
+		}
+		thread, err := b.client.Rest.CreateThreadFromMessage(
+			event.ChannelID, msg.ID,
+			threadCreate,
+		)
+		if err == nil && thread != nil {
+			replyCh = thread.ID()
+		}
+	}
+
+	ctx := &CommandContext{event: event, bot: b, command: cmd, args: args, replyCh: replyCh}
 
 	var reply string
 	switch cmd {
@@ -148,6 +216,7 @@ type CommandContext struct {
 	bot     *Bot
 	command string
 	args    []string
+	replyCh snowflake.ID
 }
 
 func (b *Bot) runCheck(ctx *CommandContext) {
@@ -208,7 +277,10 @@ func (b *Bot) runRemove(ctx *CommandContext, name string) {
 }
 
 func (b *Bot) reply(ctx *CommandContext, text string) {
-	_, _ = ctx.event.Client().Rest.CreateMessage(ctx.event.ChannelID, discord.MessageCreate{Content: text})
+	if ctx.replyCh == 0 {
+		ctx.replyCh = ctx.event.ChannelID
+	}
+	_, _ = b.client.Rest.CreateMessage(ctx.replyCh, discord.MessageCreate{Content: text})
 }
 
 // ── Formatters ─────────────────────────────────────────────────────────────
