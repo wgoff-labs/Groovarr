@@ -9,27 +9,10 @@ services:
     restart: unless-stopped
     environment:
       - PORT=${PORT:-8080}
-      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
-      - AUTH_PASSWORD=${AUTH_PASSWORD:-changeme}
-      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      - DISCORD_HOME_CHANNEL=${DISCORD_HOME_CHANNEL:-0}
-      - DISCORD_ALLOWED_CHANNELS=${DISCORD_ALLOWED_CHANNELS:-}
-      - DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS:-}
-      - DISCORD_ALLOW_ALL_USERS=${DISCORD_ALLOW_ALL_USERS:-true}
-      - DISCORD_AUTO_THREAD=${DISCORD_AUTO_THREAD:-false}
-      - DISCORD_REQUIRE_MENTION=${DISCORD_REQUIRE_MENTION:-false}
-      - COMMAND_PREFIX=${COMMAND_PREFIX:-?}
-      - POPULARITY_THRESHOLD=${POPULARITY_THRESHOLD:-60}
-      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
-      - LIDARR_URL=${LIDARR_URL:-http://localhost:8686}
-      - LIDARR_API_KEY=${LIDARR_API_KEY:-}
-      - LIDARR_QUALITY_PROFILE=${LIDARR_QUALITY_PROFILE:-Standard}
-      - LIDARR_ROOT_FOLDERS=${LIDARR_ROOT_FOLDERS:-}
-      - LIDARR_DEFAULT_ROOT_FOLDER=${LIDARR_DEFAULT_ROOT_FOLDER:-}
-      - DOWNLOAD_MODE=${DOWNLOAD_MODE:-tracks}
-      - DAILY_CHECK_CRON=${DAILY_CHECK_CRON:-0 9 * * *}
-      - TIMEZONE=${TIMEZONE:-America/Detroit}
-      - DB_PATH=/data/watchlist.db
+      - AUTH_USERNAME=${AUTH_USERNAME:-}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
+      - DB_PATH=${DB_PATH:-/data/groovarr.db}
+      - DB_SALT=${DB_SALT:-}
     volumes:
       - groovarr-data:/data
     networks:
@@ -58,7 +41,7 @@ services:
     networks:
       - groovarr-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/_next/data/\_buildManifest.js"]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:3000/_next/data/_buildManifest.js" ]
       interval: 30s
       timeout: 10s
       retries: 3
