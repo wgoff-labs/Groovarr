@@ -28,9 +28,19 @@ A self-hosted Lidarr monitor that only adds **popular** new releases to your mus
 
 1. In Portainer, create a new **Stack** from this `docker-compose.yml`
 2. Set environment variables in the **Environment** tab (copy from `.env.example`)
-3. Required: `LIDARR_API_KEY`, `LASTFM_API_KEY`
-4. Optional: `DISCORD_BOT_TOKEN`, `DISCORD_HOME_CHANNEL`, `DISCORD_ALLOWED_CHANNELS`, `DISCORD_ALLOWED_USERS`, `DISCORD_ALLOW_ALL_USERS`, `DISCORD_AUTO_THREAD`, `DISCORD_REQUIRE_MENTION`
-5. Deploy. Web UI: `http://<your-server-ip>:3000`. Backend: `:8080`.
+3. **Only these environment variables are required** (all other configuration is stored in the database and managed via the web UI):
+   - `PORT` (default: 8080)
+   - `AUTH_USERNAME` (optional - if set, enables basic auth)
+   - `AUTH_PASSWORD` (optional - if set, enables basic auth)
+   - `DB_PATH` (default: `/data/groovarr.db`)
+   - `DB_SALT` (optional, for future encryption features)
+4. After first login, go to the **Settings page** in the web UI to configure:
+   - **Discord**: Bot token, allowed channels/users, home channel for reports
+   - **Lidarr**: URL, API key, quality profile, root folders
+   - **Last.fm**: API key
+   - **Popularity**: Threshold (1-100), download mode (tracks/album)
+   - **Scheduler**: Check time, timezone
+5. Deploy. Web UI: `http://<your-server-ip>:3000`. Backend API: `:8080`.
 
 ## Local Development
 
@@ -50,7 +60,7 @@ npm run dev               # serves Next.js on :3000, proxies /api → :8080
 
 ## Database
 
-SQLite stored at `/data/watchlist.db` (a Docker volume in production). To reset:
+SQLite stored at `/data/groovarr.db` (a Docker volume in production). To reset:
 
 ```bash
 docker volume rm groovarr_groovarr-data
@@ -74,9 +84,8 @@ Groovarr/
 │   │   ├── config/      # Env loading
 │   │   ├── core/        # Business logic (checker, pruner, popularity)
 │   │   ├── discord/     # disgo bot
-│   │   ├── scheduler/   # Cron
-│   │   └── store/       # SQLite
-│   └── main.go
+│   │   └── scheduler/   # Cron
+│   └── store/           # SQLite
 ├── frontend/            # Next.js 14 + TypeScript
 │   └── src/app/         # /, /artists, /settings
 ├── docker-compose.yml

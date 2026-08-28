@@ -158,10 +158,10 @@ func (b *Bot) onMessageCreate(event *events.MessageCreate) {
 
 	// Auto-thread: if we're in the home channel and thread not already started
 	replyCh := event.ChannelID
-	if b.autoThread && b.homeCh != 0 && event.ChannelID == b.homeCh && msg.ThreadMetadata == nil && msg.Type != discord.MessageTypeThreadStarterMessage {
+	if b.autoThread && b.homeCh != 0 && event.ChannelID == b.homeCh {
 		threadCreate := discord.ThreadCreateFromMessage{
 			Name:                fmt.Sprintf("cmd-%s", cmd),
-			AutoArchiveDuration: discord.AutoArchiveDurationWeek,
+			AutoArchiveDuration: discord.AutoArchiveDuration1w,
 		}
 		thread, err := b.client.Rest.CreateThreadFromMessage(
 			event.ChannelID, msg.ID,
