@@ -1,0 +1,40 @@
+# Build artifacts
+backend/groovarr-backend
+backend/groovarr-backend.exe
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Local env files
+.env
+.env.local
+*.local
+
+# Go
+backend/coverage.html
+backend/coverage.txt
+backend/*.test
+
+# Node
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/dist
+frontend/.next/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS
+Thumbs.db

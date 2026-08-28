@@ -1,0 +1,25 @@
+# Build artifacts
+groovarr-backend
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Local env
+.env
+.env.local
+
+# IDE
+.vscode
+.idea
+.DS_Store
+
+# Go test/coverage
+*.test
+*.out
+coverage.html
+
+# Node (in case anyone runs npm in here)
+node_modules
+.next

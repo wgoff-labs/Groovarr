@@ -1,0 +1,162 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/groovarr/groovarr/backend/internal/core"
+	"github.com/groovarr/groovarr/backend/internal/store"
+)
+
+// ArtistHandler returns JSON for the artist list.
+func ArtistHandler(w http.ResponseWriter, r *http.Request) {
+	artists, err := store.ArtistList()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(artists)
+}
+
+// StatusHandler returns basic service status.
+func StatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "ok",
+		"service": "groovarr",
+	})
+}
+
+// CheckHandler triggers a manual popularity check.
+func CheckHandler(w http.ResponseWriter, r *http.Request) {
+	artist := r.URL.Query().Get("artist")
+	results, err := core.RunDailyCheck(artist, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+// ScanHandler triggers a full catalog scan for an artist.
+func ScanHandler(w http.ResponseWriter, r *http.Request) {
+	artist := r.URL.Query().Get("artist")
+	results, err := core.RunDailyCheck(artist, true)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+// PruneHandler triggers a prune operation.
+func PruneHandler(w http.ResponseWriter, r *http.Request) {
+	artist := r.URL.Query().Get("artist")
+	force := r.URL.Query().Get("force") == "true"
+	results, err := core.PruneDownloadedAlbums(artist, force)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+// SettingsHandler gets or sets simple settings.
+func SettingsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		key := r.URL.Query().Get("key")
+		if key == "" {
+			http.Error(w, "missing key", http.StatusBadRequest)
+			return
+		}
+		val, _ := store.SettingGet(key)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"key": key, "value": val})
+	case http.MethodPost:
+		var req struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := store.SettingSet(req.Key, req.Value); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// KeepHandler manages never-prune tracks.
+// GET  ?artist=X&album=Y → list protected tracks for album
+// POST ?artist=X&album=Y&track=Z → protect a track
+// DELETE ?artist=X&album=Y&track=Z → unprotect a track
+func KeepHandler(w http.ResponseWriter, r *http.Request) {
+	artist := r.URL.Query().Get("artist")
+	album := r.URL.Query().Get("album")
+	track := r.URL.Query().Get("track")
+
+	if artist == "" || album == "" {
+		http.Error(w, "artist and album required", http.StatusBadRequest)
+		return
+	}
+
+	a, err := store.ArtistGet(artist)
+	if err != nil || a == nil {
+		http.Error(w, "artist not found", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		tracks, _ := store.NeverPruneTracks(a.ID, album)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"artist": artist,
+			"album":  album,
+			"tracks": tracks,
+		})
+	case http.MethodPost:
+		if track == "" {
+			http.Error(w, "track required", http.StatusBadRequest)
+			return
+		}
+		if err := store.NeverPruneAdd(a.ID, album, track); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	case http.MethodDelete:
+		if track == "" {
+			http.Error(w, "track required", http.StatusBadRequest)
+			return
+		}
+		if err := store.NeverPruneDelete(a.ID, album, track); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// DownloadStatusHandler checks for completed downloads and auto-prunes them.
+func DownloadStatusHandler(w http.ResponseWriter, r *http.Request) {
+	results, err := core.CheckDownloads()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
