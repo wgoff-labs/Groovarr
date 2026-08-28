@@ -2,9 +2,8 @@
 const nextConfig = {
   output: 'standalone',
   async rewrites() {
-    // Proxy API calls to the Go backend during dev
     return [
-      { source: '/api/:path*', destination: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/:path*' },
+      { source: '/api/:path*', destination: process.env.NEXT_PUBLIC_API_URL || 'http://backend:8080/api/:path*' },
     ];
   },
 };

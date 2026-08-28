@@ -28,7 +28,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=/api
+        - NEXT_PUBLIC_API_URL=http://backend:8080
     container_name: groovarr-frontend
     restart: unless-stopped
     depends_on:
