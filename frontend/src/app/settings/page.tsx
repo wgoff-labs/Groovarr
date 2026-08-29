@@ -24,6 +24,8 @@ const KEYS = {
   discord_allow_all_users: 'discord_allow_all_users',
   discord_auto_thread: 'discord_auto_thread',
   discord_require_mention: 'discord_require_mention',
+  discord_allowed_channels: 'discord_allowed_channels',
+  discord_allowed_users: 'discord_allowed_users',
 } as const;
 
 const TIMEZONES = [
@@ -325,6 +327,14 @@ export default function SettingsPage() {
 
         <Field label="Home Channel ID" hint="Where daily reports are posted. Right-click channel in Discord → Copy ID.">
           <TextInput keyName={KEYS.discord_home_channel} placeholder="123456789012345678" />
+        </Field>
+
+        <Field label="Allowed Channel IDs" hint="Comma-separated. Bot will only respond in these channels. Leave blank to allow all channels (except DMs unless user is allow-listed).">
+          <TextInput keyName={KEYS.discord_allowed_channels} placeholder="123456789, 987654321" />
+        </Field>
+
+        <Field label="Allowed User IDs" hint="Comma-separated. If populated, only these users can use the bot. Leave blank to allow all users.">
+          <TextInput keyName={KEYS.discord_allowed_users} placeholder="123456789, 987654321" />
         </Field>
 
         <div className="space-y-2">

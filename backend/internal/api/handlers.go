@@ -6,6 +6,7 @@ import (
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/core"
+	"github.com/groovarr/groovarr/backend/internal/discord"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
@@ -107,6 +108,15 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if err := store.SettingSet(req.Key, req.Value); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		// Reload Discord bot settings if a discord-related key was saved
+		if bot := discord.GetBot(); bot != nil {
+			switch req.Key {
+			case "discord_token", "discord_home_channel", "discord_allow_all_users",
+				"discord_auto_thread", "discord_require_mention",
+				"discord_allowed_channels", "discord_allowed_users":
+				bot.ReloadSettings()
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	default:

@@ -77,6 +77,28 @@ func (b *Bot) Start() error                   { return b.client.OpenGateway(cont
 func (b *Bot) Stop() error                    { b.client.Close(context.TODO()); return nil }
 func (b *Bot) Client() *bot.Client            { return b.client }
 
+// ReloadSettings refreshes channel/user allowlists from the database without restarting the bot.
+func (b *Bot) ReloadSettings() {
+	cfg := config.Load()
+	b.cfg = cfg
+	b.homeCh = snowflake.ID(cfg.DiscordHomeChannel)
+	b.allowAll = cfg.DiscordAllowAllUsers
+	b.autoThread = cfg.DiscordAutoThread
+	b.requireMention = cfg.DiscordRequireMention
+
+	// Rebuild channel map
+	b.allowChans = make(map[snowflake.ID]struct{}, len(cfg.DiscordAllowedChans))
+	for _, id := range cfg.DiscordAllowedChans {
+		b.allowChans[snowflake.ID(id)] = struct{}{}
+	}
+
+	// Rebuild user map
+	b.allowUsers = make(map[string]struct{}, len(cfg.DiscordAllowedUsers))
+	for _, u := range cfg.DiscordAllowedUsers {
+		b.allowUsers[u] = struct{}{}
+	}
+}
+
 func (b *Bot) SendReport(text string) error {
 	if b.homeCh == 0 {
 		return nil

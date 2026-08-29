@@ -107,14 +107,88 @@ func LoadFromDB() error {
 	}
 
 	// Load default root folder
-	if v, err := store.SettingGet("default_root_folder"); err == nil && v != "" {
+	if v, err := store.SettingGet("lidarr_default_root_folder"); err == nil && v != "" {
 		global.LidarrDefaultRootFolder = v
 	}
 
-	// Note: We do not reload Discord or Lidarr settings from the DB in this version
-	// to keep the initial implementation simple. They can be added later if needed.
+	// Load Lidarr settings
+	if v, err := store.SettingGet("lidarr_url"); err == nil && v != "" {
+		global.LidarrURL = v
+	}
+	if v, err := store.SettingGet("lidarr_api_key"); err == nil && v != "" {
+		global.LidarrAPIKey = v
+	}
+	if v, err := store.SettingGet("lidarr_quality_profile"); err == nil && v != "" {
+		global.LidarrQualityProfile = v
+	}
+
+	// Load Last.fm
+	if v, err := store.SettingGet("lastfm_api_key"); err == nil && v != "" {
+		global.LastFMAPIKey = v
+	}
+
+	// Load schedule
+	if v, err := store.SettingGet("daily_check_cron"); err == nil && v != "" {
+		global.DailyCheckCron = v
+	}
+	if v, err := store.SettingGet("timezone"); err == nil && v != "" {
+		global.Timezone = v
+	}
+
+	// Load Discord settings
+	if v, err := store.SettingGet("discord_home_channel"); err == nil && v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			global.DiscordHomeChannel = id
+		}
+	}
+	if v, err := store.SettingGet("discord_allow_all_users"); err == nil {
+		global.DiscordAllowAllUsers = v == "true"
+	}
+	if v, err := store.SettingGet("discord_auto_thread"); err == nil {
+		global.DiscordAutoThread = v == "true"
+	}
+	if v, err := store.SettingGet("discord_require_mention"); err == nil {
+		global.DiscordRequireMention = v == "true"
+	}
+	// Allowed channels: comma-separated snowflake IDs
+	if v, err := store.SettingGet("discord_allowed_channels"); err == nil && v != "" {
+		global.DiscordAllowedChans = parseIntSlice(v)
+	}
+	// Allowed users: comma-separated user IDs or usernames
+	if v, err := store.SettingGet("discord_allowed_users"); err == nil && v != "" {
+		global.DiscordAllowedUsers = parseStringSlice(v)
+	}
 
 	return nil
+}
+
+// parseIntSlice parses a comma-separated string of integers.
+func parseIntSlice(s string) []int64 {
+	parts := strings.Split(s, ",")
+	result := make([]int64, 0)
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if id, err := strconv.ParseInt(p, 10, 64); err == nil {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+// parseStringSlice parses a comma-separated string of values.
+func parseStringSlice(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // Helper functions to get environment variables with type conversion.
