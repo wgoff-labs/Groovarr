@@ -16,10 +16,12 @@ export default function ArtistsPage() {
   const loadArtists = useCallback(async () => {
     setLoading(true);
     try {
-      setArtists(await api.artists.list());
+      const result = await api.artists.list();
+      setArtists(Array.isArray(result) ? result : []);
       setError(null);
     } catch (e: any) {
       setError(`Backend unreachable: ${e.message}`);
+      setArtists([]);
     }
     setLoading(false);
   }, []);
@@ -27,14 +29,16 @@ export default function ArtistsPage() {
   const loadFolders = useCallback(async () => {
     try {
       const folderList = await api.folders.list();
-      setFolders(folderList);
+      const safeFolders = Array.isArray(folderList) ? folderList : [];
+      setFolders(safeFolders);
       // Auto-select first folder if none selected yet
-      if (!selectedFolder && folderList.length > 0) {
-        setSelectedFolder(folderList[0].path);
+      if (!selectedFolder && safeFolders.length > 0) {
+        setSelectedFolder(safeFolders[0].path);
       }
     } catch (e: any) {
       // Silently fail - we can still use default folder
       console.warn("Could not load folders:", e.message);
+      setFolders([]);
     }
   }, [selectedFolder]);
 

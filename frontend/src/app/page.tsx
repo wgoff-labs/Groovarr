@@ -16,12 +16,14 @@ export default function DashboardPage() {
     try {
       const [s, a] = await Promise.all([api.status(), api.artists.list()]);
       setStatus(s);
-      setArtists(a);
+      // Defensive: ensure a is always an array (never null/undefined)
+      setArtists(Array.isArray(a) ? a : []);
       setCheckResult(null);
       setPruneResult(null);
       setError(null);
     } catch (e: any) {
       setError(`Cannot reach Groovarr backend: ${e.message}`);
+      setArtists([]); // Ensure artists is never null
       setCheckResult(null);
       setPruneResult(null);
     }
@@ -33,9 +35,10 @@ export default function DashboardPage() {
     setCheckLoading(true);
     try {
       const results = await api.check();
-      setCheckResult(results);
+      setCheckResult(Array.isArray(results) ? results : []);
     } catch (e: any) {
       setError(`Check failed: ${e.message}`);
+      setCheckResult([]);
     }
     setCheckLoading(false);
   };
@@ -44,9 +47,10 @@ export default function DashboardPage() {
     setPruneLoading(true);
     try {
       const results = await api.prune();
-      setPruneResult(results);
+      setPruneResult(Array.isArray(results) ? results : []);
     } catch (e: any) {
       setError(`Prune failed: ${e.message}`);
+      setPruneResult([]);
     }
     setPruneLoading(false);
   };
