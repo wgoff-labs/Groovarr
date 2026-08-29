@@ -139,19 +139,14 @@ export const api = {
     connect: (service: string) =>
       fetchJSON<{ statuses: ConnectionStatus[] }>('/api/connections', {
         method: 'POST',
-        body: JSON.stringify({ action: `connect_${service}` }),
+        body: JSON.stringify({ service, action: 'connect' }),
       }),
     disconnect: (service: string) =>
       fetchJSON<{ statuses: ConnectionStatus[] }>('/api/connections', {
         method: 'POST',
-        body: JSON.stringify({ action: `disconnect_${service}` }),
-      }),
-    test: (service: string) =>
-      fetchJSON<{ status: string; error?: string }>('/api/connections', {
-        method: 'POST',
-        body: JSON.stringify({ action: `test_${service}` }),
+        body: JSON.stringify({ service, action: 'disconnect' }),
       }),
     logs: () => fetchJSON<{ logs: LogEntry[] }>('/api/connections/logs'),
-    clearLogs: () => fetchJSON<{ status: string }>('/api/connections/logs', { method: 'DELETE' }),
+    clearLogs: () => fetchJSON('/api/connections/logs', { method: 'DELETE' }),
   },
 };

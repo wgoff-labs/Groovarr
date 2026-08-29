@@ -317,38 +317,58 @@ export default function SettingsPage() {
           {connError && (
             <p className="text-xs text-red-400">Error loading status: {connError}</p>
           )}
-          {connStatus.filter(s => s.service === 'lidarr').map((svc) => (
-            <div key={svc.service} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span className="text-lg">🎵</span>
-                <div>
-                  <p className="text-sm font-medium text-white">Lidarr</p>
-                  <p className={`text-xs ${
-                    svc.status === 'connected' ? 'text-emerald-400' :
-                    svc.status === 'error' ? 'text-red-400' :
-                    svc.status === 'connecting' ? 'text-yellow-400' :
-                    'text-gray-500'
-                  }`}>
-                    {svc.status === 'connected' && '✅ Connected'}
-                    {svc.status === 'connecting' && '⏳ Connecting...'}
-                    {svc.status === 'disconnected' && '⭕ Disconnected'}
-                    {svc.status === 'error' && `❌ Error: ${svc.error || 'unknown'}`}
-                  </p>
+          <>
+            {['lidarr', 'discord', 'lastfm'].map((service: string) => {
+              const svc = connStatus.find((s: ConnectionStatus) => s.service === service);
+              if (!svc) return null;
+              const getIcon = (s: string) => {
+                if (s === 'lidarr') return '🎵';
+                if (s === 'discord') return '💬';
+                if (s === 'lastfm') return '📊';
+                return '🔌';
+              };
+              const getLabel = (s: string) => {
+                if (s === 'lidarr') return 'Lidarr';
+                if (s === 'discord') return 'Discord';
+                if (s === 'lastfm') return 'Last.fm';
+                return service;
+              };
+              return (
+                <div key={svc.service} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">{getIcon(service)}</span>
+                    <div>
+                      <p className="text-sm font-medium text-white">{getLabel(service)}</p>
+                      <p className={`text-xs ${
+                        svc.status === 'connected' ? 'text-emerald-400' :
+                        svc.status === 'error' ? 'text-red-400' :
+                        svc.status === 'connecting' ? 'text-yellow-400' :
+                        'text-gray-500'
+                      }`}>
+                        {svc.status === 'connected' && '✅ Connected'}
+                        {svc.status === 'connecting' && '⏳ Connecting...'}
+                        {svc.status === 'disconnected' && '⭕ Disconnected'}
+                        {svc.status === 'error' && `❌ Error: ${svc.error || 'unknown'}`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleConnection(service, svc.status === 'connected' ? 'disconnect' : 'connect')}
+                    disabled={connActing === service || svc.status === 'connecting'}
+                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      svc.status === 'connected'
+                        ? 'bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-800/50'
+                        : svc.status === 'disconnected' || svc.status === 'error'
+                          ? 'bg-emerald-700 border border-emerald-600 text-emerald-100 hover:bg-emerald-600'
+                          : 'bg-gray-600/50 border border-gray-600 text-gray-300'
+                    }`}
+                  >
+                    {connActing === service ? '…' : svc.status === 'connected' ? 'Disconnect' : 'Connect'}
+                  </button>
                 </div>
-              </div>
-              <button
-                onClick={() => handleConnection('lidarr', svc.status === 'connected' ? 'disconnect' : 'connect')}
-                disabled={connActing === 'lidarr' || svc.status === 'connecting'}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  svc.status === 'connected'
-                    ? 'bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-800/50'
-                    : 'bg-emerald-700 border border-emerald-600 text-emerald-100 hover:bg-emerald-600'
-                }`}
-              >
-                {connActing === 'lidarr' ? '…' : svc.status === 'connected' ? 'Disconnect' : 'Connect'}
-              </button>
-            </div>
-          ))}
+              );
+            })}
+          </>
           {connStatus.length === 0 && !connError && (
             <p className="text-sm text-gray-500 italic">Loading...</p>
           )}

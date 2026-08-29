@@ -35,9 +35,6 @@ func main() {
 	// Load persisted settings into config
 	scheduler.LoadPersistedSettings()
 
-	// Initialize external connections (Lidarr, etc.) from saved credentials
-	connections.Init()
-
 	// Create HTTP mux
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
@@ -55,18 +52,15 @@ func main() {
 
 	// Serve embedded frontend (handles all non-API routes including SPA routing)
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
-	// We need to use a custom handler that wraps the mux and routes API vs frontend.
+	// We need to use a custom handler that routes API vs frontend.
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// API requests go to the mux (which has the API routes)
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
 			mux.ServeHTTP(w, r)
 			return
 		}
-		// Everything else goes to the embedded frontend
 		frontend.NewHandler()(w, r)
 	})
 
-	// CORS wrapper for dev
 	handler := corsMiddleware(mainHandler)
 
 	srv := &http.Server{
@@ -74,36 +68,15 @@ func main() {
 		Handler: handler,
 	}
 
-	// Create Discord bot (optional — app runs without it)
-	var discordBot *discord.Bot
-	if cfg.DiscordToken != "" {
-		var berr error
-		discordBot, berr = discord.New(cfg.DiscordToken, func(report string) {
-			if cfg.DiscordHomeChannel != 0 {
-				if bot := discord.GetBot(); bot != nil {
-					if err := bot.SendReport(report); err != nil {
-						log.Printf("Failed to send report to Discord: %v", err)
-					}
-				}
-			} else {
-				log.Printf("Report (no channel set): %s", report)
-			}
-		})
-		if berr != nil {
-			log.Printf("Discord bot init failed (continuing without): %v", berr)
-		} else {
-			discord.SetGlobalBot(discordBot)
-			if err := discordBot.Start(); err != nil {
-				log.Printf("Discord bot start failed (continuing without): %v", err)
-			} else {
-				log.Println("Discord bot connected")
-			}
-		}
-	} else {
-		log.Println("Discord token not set — running without bot")
-	}
+	// Initialise external connections (Lidarr, Discord, LastFM) from saved credentials.
+	// This also starts the Discord bot if a token is in the DB.
+	connections.Init()
 
-	// Create scheduler
+	// Get a reference to the Discord bot that may have been started by connections.Init().
+	// If no token was in the DB the bot will be nil — that's fine.
+	discordBot := discord.GetBot()
+
+	// Create scheduler — uses Discord bot for reports if available
 	sch := scheduler.New(func(report string) {
 		if discordBot != nil && cfg.DiscordHomeChannel != 0 {
 			if err := discordBot.SendReport(report); err != nil {
