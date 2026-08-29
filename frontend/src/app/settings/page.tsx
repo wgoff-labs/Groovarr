@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { api, Folder } from '@/lib/api';
+import { api, Folder, Profile } from '@/lib/api';
 
 // Settings keys
 const KEYS = {
@@ -35,17 +35,13 @@ const TIMEZONES = [
   'Australia/Sydney', 'Pacific/Auckland', 'UTC',
 ];
 
-const QUALITY_PROFILES = [
-  'Standard', 'Lossless', 'High Quality', 'Ultra High Quality',
-  'MP3-320', 'MP3-256', 'FLAC', 'Any',
-];
-
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   const loadAll = useCallback(async () => {
@@ -79,10 +75,26 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadProfiles = useCallback(async () => {
+    try {
+      const profileList = await api.profiles.list();
+      const safeProfiles = Array.isArray(profileList) ? profileList : [];
+      setProfiles(safeProfiles);
+    } catch {
+      setProfiles([]);
+    }
+  }, []);
+
+  const reloadLidarr = useCallback(() => {
+    loadFolders();
+    loadProfiles();
+  }, [loadFolders, loadProfiles]);
+
   useEffect(() => {
     loadAll();
     loadFolders();
-  }, [loadAll, loadFolders]);
+    loadProfiles();
+  }, [loadAll, loadFolders, loadProfiles]);
 
   const save = async (key: string, value: string) => {
     setSaving(key);
@@ -92,8 +104,9 @@ export default function SettingsPage() {
       setSaved(`Saved`);
       setTimeout(() => setSaved(null), 2000);
       setError(null);
-      if (key.startsWith('lidarr_')) {
-        setTimeout(loadFolders, 500);
+      // If Lidarr connection details changed, refresh the dropdowns
+      if (key === 'lidarr_url' || key === 'lidarr_api_key') {
+        setTimeout(reloadLidarr, 500);
       }
     } catch (e: any) {
       setError(`Save failed: ${e.message}`);
@@ -281,14 +294,18 @@ export default function SettingsPage() {
           </div>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Quality Profile</p>
-            <SelectInput keyName={KEYS.lidarr_quality_profile} options={QUALITY_PROFILES} />
+            {profiles.length > 0 ? (
+              <SelectInput keyName={KEYS.lidarr_quality_profile} options={profiles.map((p) => p.name)} />
+            ) : (
+              <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
+            )}
           </div>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Default Root Folder</p>
             {folders.length > 0 ? (
               <SelectInput keyName={KEYS.lidarr_default_root_folder} options={folders.map((f) => f.path)} />
             ) : (
-              <TextInput keyName={KEYS.lidarr_default_root_folder} placeholder="/music" />
+              <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
             )}
           </div>
         </div>

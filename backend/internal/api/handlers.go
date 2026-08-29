@@ -47,6 +47,22 @@ func FoldersHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(folders)
 }
 
+// ProfilesHandler returns all Lidarr quality profiles (scans Lidarr on every call).
+func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := clients.NewLidarrClient()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	profiles, err := c.GetQualityProfiles()
+	if err != nil {
+		http.Error(w, "Lidarr unreachable: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profiles)
+}
+
 // CheckHandler triggers a manual popularity check.
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")

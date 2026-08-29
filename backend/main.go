@@ -39,6 +39,7 @@ func main() {
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
 	mux.HandleFunc("/api/folders", api.FoldersHandler)
+	mux.HandleFunc("/api/profiles", api.ProfilesHandler)
 	mux.HandleFunc("/api/check", api.CheckHandler)
 	mux.HandleFunc("/api/scan", api.ScanHandler)
 	mux.HandleFunc("/api/prune", api.PruneHandler)

@@ -13,6 +13,11 @@ export interface Folder {
   path: string;
 }
 
+export interface Profile {
+  id: number;
+  name: string;
+}
+
 export interface CheckResult {
   artist_name: string;
   new_albums_found: number;
@@ -109,5 +114,9 @@ export const api = {
 
   folders: {
     list: () => fetchJSON<Folder[]>('/api/folders'),
+  },
+
+  profiles: {
+    list: () => fetchJSON<Profile[]>('/api/profiles'),
   },
 };
