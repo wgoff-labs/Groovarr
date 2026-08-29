@@ -325,20 +325,6 @@ export default function SettingsPage() {
         </div>
       </div>
       
-      {/* ── Last.fm ── */}
-      <div className="card space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">📊 Last.fm</h2>
-        <p className="text-xs text-gray-400">Get popularity scores from Last.fm for better music recommendations.</p>
-        <div className="max-w-sm">
-          <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
-          <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
-          <p className="text-xs text-gray-500 mt-1">
-            Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a>
-          </p>
-        </div>
-      </div>
-      
-
       {/* ── Lidarr ── */}
       <div className="card space-y-3">
         {/* Header: left=title, right=status+button */}
@@ -378,6 +364,67 @@ export default function SettingsPage() {
         </div>
       </div>
       
+      {/* ── Discord Bot ── */}
+      <div className="card space-y-3">
+        {/* Header: left=title, right=status + logs link */}
+        <div className="grid grid-cols-2">
+          <h2 className="text-base font-semibold flex items-center gap-2">💬 Discord Bot</h2>
+          <div className="space-y-1 text-right">
+            <div className="flex items-center justify-end gap-3">
+              {discordStatus && (
+                <>
+                  <span className="text-xs text-gray-400">Discord</span>
+                  <p className={`text-xs ${connColor(discordStatus)}`}>{connLabel(discordStatus)}</p>
+                  {connBtn(discordStatus, connActing === 'discord', 'discord', handleConnection)}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end">
+          <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">📋 Connection Logs →</Link>
+        </div>
+        <p className="text-xs text-gray-400">
+          Enable a Discord bot for commands and daily reports.
+        </p>
+
+        {/* Discord bot config */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-xs font-medium text-gray-300 mb-1">Bot Token</p>
+            <TextInput keyName={KEYS.discord_token} placeholder="your-discord-bot-token" isSecret />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-300 mb-1">Home Channel ID</p>
+            <TextInput keyName={KEYS.discord_home_channel} placeholder="123456789012345678" />
+            <p className="text-xs text-gray-500 mt-1">Daily reports posted here</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-300 mb-1">Allowed Channel IDs</p>
+            <TextInput keyName={KEYS.discord_allowed_channels} placeholder="123, 456, 789" />
+            <p className="text-xs text-gray-500 mt-1">Comma-separated. Empty = all channels</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-300 mb-1">Allowed User IDs</p>
+            <TextInput keyName={KEYS.discord_allowed_users} placeholder="123, 456, 789" />
+            <p className="text-xs text-gray-500 mt-1">Comma-separated. Empty = all users</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
+            <p className="text-sm font-medium text-white">Allow All Users</p>
+            <ToggleInput keyName={KEYS.discord_allow_users} label="Allow All Users" />
+          </div>
+          <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
+            <p className="text-sm font-medium text-white">Auto-Thread</p>
+            <ToggleInput keyName={KEYS.discord_auto_thread} label="Auto-Thread" />
+          </div>
+        </div>
+
+
+      </div>
+      
       {/* ── Last.fm ── */}
       <div className="card space-y-3">
         <h2 className="text-base font-semibold flex items-center gap-2">📊 Last.fm</h2>
@@ -392,7 +439,7 @@ export default function SettingsPage() {
       </div>
       
 
-      {/* ── Discord Bot ── */}
+      {}
       <div className="card space-y-3">
         {/* Header: left=title, right=status + logs link */}
         <div className="grid grid-cols-2">
