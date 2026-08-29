@@ -50,6 +50,9 @@ func NewHandler() http.HandlerFunc {
 		content, err := fs.ReadFile(distFS, pagePath)
 		if err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 			w.Write(content)
 			return
 		}
@@ -58,6 +61,9 @@ func NewHandler() http.HandlerFunc {
 		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
 		if err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
 			w.Write(content)
 			return
 		}
