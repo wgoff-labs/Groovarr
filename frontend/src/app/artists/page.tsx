@@ -54,12 +54,8 @@ export default function ArtistsPage() {
     }
     setAdding(true);
     try {
-      // Call backend with explicit folder
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080'}/api/artists`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim(), root_folder: selectedFolder })
-      });
+      // Call backend with explicit folder - use the api object for consistency
+      await api.artists.add(newName.trim(), selectedFolder);
       setNewName('');
       setSelectedFolder(null); // Reset selection after add
       setActionMsg('Artist added successfully.');

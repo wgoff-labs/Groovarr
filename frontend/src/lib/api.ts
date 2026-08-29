@@ -60,6 +60,11 @@ export const api = {
 
   artists: {
     list: () => fetchJSON<Artist[]>('/api/artists'),
+    add: (name: string, rootFolder?: string) =>
+      fetchJSON<Artist>('/api/artists', {
+        method: 'POST',
+        body: JSON.stringify({ name, root_folder: rootFolder }),
+      }),
     remove: (name: string) =>
       fetchJSON<void>('/api/artists', { method: 'DELETE' }),
   },
