@@ -123,7 +123,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := store.SettingSet(req.Key, req.Value); err != nil {
+		if err := store.SettingUpdate(req.Key, req.Value); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -177,7 +177,7 @@ func KeepHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "track required", http.StatusBadRequest)
 			return
 		}
-		if err := store.NeverPruneAdd(a.ID, album, track); err != nil {
+		if err := store.NeverPruneInsert(a.ID, album, track); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

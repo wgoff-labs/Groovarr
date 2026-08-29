@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { api, CheckResult, PruneResult } from '@/lib/api';
+import { api, CheckResult, PruneResult, HitFallenEntry } from '@/lib/api';
 
 export default function DashboardPage() {
   const [status, setStatus] = useState<{ status: string; service: string } | null>(null);
@@ -11,6 +11,8 @@ export default function DashboardPage() {
   const [checkLoading, setCheckLoading] = useState(false);
   const [pruneLoading, setPruneLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hitFallen, setHitFallen] = useState<HitFallenEntry[] | null>(null);
+  const [hitFallenOpen, setHitFallenOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -30,6 +32,17 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadHitFallen = async () => {
+    if (hitFallen !== null) { setHitFallenOpen(v => !v); return; }
+    try {
+      const data = await api.hitfallen.list();
+      setHitFallen(data.entries ?? []);
+      setHitFallenOpen(true);
+    } catch (e: any) {
+      setHitFallen([]); // empty on error (e.g. Lidarr not connected)
+    }
+  };
 
   const runCheck = async () => {
     setCheckLoading(true);
@@ -82,7 +95,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-wrap">
         <button onClick={runCheck} disabled={checkLoading} className="btn-primary">
           {checkLoading ? '⏳ Checking...' : '🔍 Run Daily Check'}
         </button>
@@ -92,7 +105,66 @@ export default function DashboardPage() {
         <button onClick={load} className="btn-ghost">
           🔄 Refresh
         </button>
+        <button onClick={loadHitFallen} className="btn-ghost">
+          {hitFallenOpen ? '🔼 Hide Fallen' : '📉 Show Fallen Hits'}
+        </button>
       </div>
+
+      {/* Hit-fallen review widget */}
+      {hitFallenOpen && hitFallen !== null && (
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            📉 Fallen Hits
+            <span className="text-xs text-gray-500 font-normal">
+              ({hitFallen.length} {hitFallen.length === 1 ? 'entry' : 'entries'})
+            </span>
+          </h2>
+          {hitFallen.length === 0 ? (
+            <p className="text-gray-400 text-sm">
+              No tracks have fallen out of hit status. Tracks marked <span className="text-gray-300">Hit</span> that drop below threshold will appear here for review.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-400 border-b border-gray-700">
+                    <th className="pb-2 font-medium">Artist</th>
+                    <th className="pb-2 font-medium">Track</th>
+                    <th className="pb-2 font-medium">Album</th>
+                    <th className="pb-2 font-medium">Score @ Fall</th>
+                    <th className="pb-2 font-medium">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hitFallen.map((h) => (
+                    <tr key={h.id} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
+                      <td className="py-2 text-white">
+                        {h.artistId ? (
+                          <a href={`/artists/${h.artistId}/manage`} className="text-emerald-400 hover:underline">
+                            {h.artistName}
+                          </a>
+                        ) : (
+                          h.artistName
+                        )}
+                      </td>
+                      <td className="py-2 text-gray-200">{h.trackTitle || <span className="text-gray-500">#{h.trackId}</span>}</td>
+                      <td className="py-2 text-gray-400">{h.albumTitle || '—'}</td>
+                      <td className="py-2 text-gray-300">
+                        <span className={h.scoreAtFall >= 60 ? 'text-yellow-400' : 'text-red-400'}>
+                          {h.scoreAtFall}
+                        </span>
+                      </td>
+                      <td className="py-2 text-gray-500 text-xs">
+                        {new Date(h.fallenAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Check results */}
       {checkResult && (

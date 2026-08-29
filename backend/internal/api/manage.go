@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/wgoff-labs/Groovarr/backend/internal/connections"
-	"github.com/wgoff-labs/Groovarr/backend/internal/store"
+	"github.com/groovarr/groovarr/backend/internal/connections"
+	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
 // ArtistManageHandler handles GET /api/artist/:artistId/manage
@@ -41,14 +41,14 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get connection manager to access Lidarr client
 	mgr := connections.GetManager()
-	lidarrClient := mgr.GetLidarrClient()
-	if lidarrClient == nil {
+	lidarrClient, err := mgr.GetLidarrClient()
+	if err != nil || lidarrClient == nil {
 		http.Error(w, "Lidarr not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// Fetch albums from Lidarr
-	albums, err := lidarrClient.GetArtistAlbums(artist.LidarrID)
+	albums, err := lidarrClient.GetArtistAlbums(derefPtr(artist.LidarrID))
 	if err != nil {
 		http.Error(w, "Failed to fetch albums from Lidarr", http.StatusInternalServerError)
 		return
@@ -56,36 +56,28 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get monitored tracks if download mode is tracks
 	var monitoredTracks []MonitoredTrackResponse
-	downloadMode, _ := store.SettingGet("general_download_mode")
-	if downloadMode == "tracks" {
-		tracks, err := lidarrClient.GetArtistTracks(artist.LidarrID)
-		if err != nil {
-			http.Error(w, "Failed to fetch tracks from Lidarr", http.StatusInternalServerError)
-			return
-		}
+	// Track preferences map for all tracks
+	trackPrefs, _ := store.GetTrackPreferences(artistID)
 
-		// Get track preferences from store
-		trackPrefs, err := store.GetTrackPreferencesForArtist(artistID)
-		if err != nil {
-			http.Error(w, "Failed to get track preferences", http.StatusInternalServerError)
-			return
-		}
-
-		// Build monitored tracks response
-		for _, track := range tracks {
-			var currentScore *int
-			// TODO: Get score from popularity cache
-			// For now, we'll leave it nil
-
-			monitoredTracks = append(monitoredTracks, MonitoredTrackResponse{
-				LidarrTrackID: track.ID,
-				Title:         track.Title,
-				AlbumTitle:    track.Album.Title,
-				TrackNumber:   track.TrackNumber,
-				DiscNumber:    track.DiscNumber,
-				CurrentScore:  currentScore,
-				TrackState:    trackPrefs[track.ID],
-			})
+	// Build monitored tracks response by iterating albums
+	if downloadMode, _ := store.SettingGet("general_download_mode"); downloadMode == "tracks" {
+		for _, album := range albums {
+			albumTracks, _ := lidarrClient.GetAlbumTracks(album.ID)
+			for _, track := range albumTracks {
+				var currentScore *int
+				monitoredTracks = append(monitoredTracks, MonitoredTrackResponse{
+					LidarrTrackID: track.ID,
+					Title:         track.Title,
+					AlbumTitle:    album.Title,
+					CurrentScore:  currentScore,
+					TrackState: func() *string {
+						if s, ok := trackPrefs[track.ID]; ok && s != "" {
+							return &s
+						}
+						return nil
+					}(),
+				})
+			}
 		}
 	}
 
@@ -95,8 +87,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		albumResponses = append(albumResponses, AlbumResponse{
 			LidarrAlbumID: album.ID,
 			Title:         album.Title,
-			Year:          album.Year,
-			TrackCount:    len(album.Tracks),
+			TrackCount:    0, // fetched per-album via GetAlbumTracks
 		})
 	}
 
@@ -104,7 +95,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		Artist: ArtistResponse{
 			ID:       artist.ID,
 			Name:     artist.Name,
-			LidarrID: artist.LidarrID,
+			LidarrID: derefPtr(artist.LidarrID),
 		},
 		Albums:     albumResponses,
 		MonitoredTracks: monitoredTracks,
@@ -138,8 +129,6 @@ type MonitoredTrackResponse struct {
 	LidarrTrackID int64   `json:"lidarrTrackId"`
 	Title         string  `json:"title"`
 	AlbumTitle    string  `json:"albumTitle"`
-	TrackNumber   int     `json:"trackNumber"`
-	DiscNumber    int     `json:"discNumber"`
 	CurrentScore  *int    `json:"currentScore,omitempty"`
 	TrackState    *string `json:"trackState,omitempty"`
 }
@@ -150,4 +139,12 @@ func hasPrefix(s, prefix string) bool {
 }
 func hasSuffix(s, suffix string) bool {
 	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
+// derefPtr safely dereferences an int64 pointer, returning 0 if nil.
+func derefPtr(p *int64) int64 {
+	if p == nil {
+		return 0
+	}
+	return *p
 }

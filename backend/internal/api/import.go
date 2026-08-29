@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/store"
@@ -89,7 +90,7 @@ func ArtistImportHandler(w http.ResponseWriter, r *http.Request) {
 			MetadataProfile:   metaProfileNames[la.MetadataProfileID],
 			Monitor:           resolveMonitor(la.Monitored),
 			AlreadyInGroovarr: groovarrNames[la.ArtistName],
-			Genres:            la.Genres,
+			Genres:            strings.Join(la.Genres, ", "),
 		})
 	}
 
@@ -201,7 +202,7 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Add to Groovarr
 		addedBy := "lidarr_import"
-		if err := store.ArtistAdd(artist.ArtistName, "", lidarrID, rootFolder, addedBy); err != nil {
+		if _, err := store.ArtistAdd(artist.ArtistName, "", lidarrID, rootFolder, addedBy); err != nil {
 			errs = append(errs, artist.ArtistName+": "+err.Error())
 			continue
 		}

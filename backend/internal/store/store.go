@@ -3,12 +3,16 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *sql.DB
+
+// GetDB returns the database connection for use by other packages.
+func GetDB() *sql.DB {
+	return db
+}
 
 func Init(dbPath string) error {
 	var err error
@@ -22,128 +26,193 @@ func Init(dbPath string) error {
 		return err
 	}
 
-	migrations := []string{
-		`CREATE TABLE IF NOT EXISTS artists (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			name            TEXT    NOT NULL UNIQUE,
-			deezer_id       TEXT,
-			lidarr_id       INTEGER,
-			root_folder     TEXT,
-			added_by        TEXT    NOT NULL,
-			added_at        TEXT    NOT NULL DEFAULT (datetime('now'))
-		);`,
-		`CREATE TABLE IF NOT EXISTS check_log (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id       INTEGER NOT NULL,
-			album_name      TEXT    NOT NULL,
-			album_id        INTEGER,
-			deezer_url      TEXT,
-			popularity      INTEGER,
-			processed       INTEGER NOT NULL DEFAULT 0,
-			checked_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS monitored_tracks (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id       INTEGER NOT NULL,
-			album_name      TEXT    NOT NULL,
-			track_name      TEXT    NOT NULL,
-			added_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-			UNIQUE(artist_id, album_name, track_name),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS settings (
-			key   TEXT PRIMARY KEY,
-			value TEXT
-		);`,
-		`CREATE TABLE IF NOT EXISTS album_status (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id       INTEGER NOT NULL,
-			album_name      TEXT    NOT NULL,
-			status          TEXT    NOT NULL,
-			lidarr_album_id INTEGER,
-			updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS never_prune (
-			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id   INTEGER NOT NULL,
-			album_name  TEXT    NOT NULL,
-			track_name  TEXT    NOT NULL,
-			UNIQUE(artist_id, album_name, track_name),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS track_popularity (
-			id              INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id       INTEGER NOT NULL,
-			lidarr_track_id INTEGER NOT NULL,
-			track_name      TEXT    NOT NULL,
-			album_name      TEXT    NOT NULL,
-			score           INTEGER NOT NULL,
-			source          TEXT    NOT NULL DEFAULT 'deezer',
-			checked_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE,
-			UNIQUE(artist_id, lidarr_track_id)
-		);`,
-		`CREATE TABLE IF NOT EXISTS track_preferences (
-			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id           INTEGER NOT NULL,
-			lidarr_track_id     INTEGER NOT NULL,
-			state               TEXT    NOT NULL CHECK(state IN ('keep', 'hit', 'not_keep')),
-			score_at_time       INTEGER,
-			updated_at          TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE,
-			UNIQUE(artist_id, lidarr_track_id)
-		);`,
-		`CREATE TABLE IF NOT EXISTS hit_fallen_log (
-			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id           INTEGER NOT NULL,
-			lidarr_track_id     INTEGER NOT NULL,
-			track_name          TEXT    NOT NULL,
-			score_at_fall       INTEGER NOT NULL,
-			fallen_at           TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS track_actions (
-			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id           INTEGER NOT NULL,
-			lidarr_track_id     INTEGER NOT NULL,
-			action              TEXT    NOT NULL CHECK(action IN ('unmonitored', 'monitored', 'score_updated')),
-			performed_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-		`CREATE TABLE IF NOT EXISTS pruning_log (
-			id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-			artist_id           INTEGER NOT NULL,
-			lidarr_track_id     INTEGER NOT NULL,
-			score_at_prune      INTEGER NOT NULL,
-			pruned_at           TEXT    NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
-		);`,
-	}
-
+	// Apply migrations
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
-			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
+			return fmt.Errorf("migration failed: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// Close closes the database connection.
+func Close() error {
+	if db != nil {
+		return db.Close()
 	}
 	return nil
 }
 
-// --- Artist ---
-
-type Artist struct {
-	ID         int64
-	Name       string
-	DeezerID   *string
-	LidarrID   *int64
-	RootFolder *string
-	AddedBy    string
-	AddedAt    string
+var migrations = []string{
+	// Artists table
+	`CREATE TABLE IF NOT EXISTS artists (
+		id              INTEGER PRIMARY KEY AUTOINCREMENT,
+		name            TEXT    NOT NULL UNIQUE,
+		deezer_id       TEXT,
+		lidarr_id       INTEGER,
+		root_folder     TEXT,
+		added_by        TEXT,
+		added_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+		last_checked    DATETIME
+	);`,
+	// Settings table (key-value store)
+	`CREATE TABLE IF NOT EXISTS settings (
+		key   TEXT PRIMARY KEY,
+		value TEXT
+	);`,
+	// Check log
+	`CREATE TABLE IF NOT EXISTS check_log (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		artist_id     INTEGER NOT NULL,
+		album_name    TEXT    NOT NULL,
+		deezer_url    TEXT,
+		popularity    INTEGER,
+		processed     BOOLEAN NOT NULL DEFAULT 0,
+		checked_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Monitored tracks
+	`CREATE TABLE IF NOT EXISTS monitored_tracks (
+		artist_id INTEGER NOT NULL,
+		album_name TEXT NOT NULL,
+		track_name TEXT NOT NULL,
+		PRIMARY KEY (artist_id, album_name, track_name),
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Never prune list
+	`CREATE TABLE IF NOT EXISTS never_prune (
+		artist_id INTEGER NOT NULL,
+		album_name TEXT NOT NULL,
+		track_name TEXT NOT NULL,
+		PRIMARY KEY (artist_id, album_name, track_name),
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Track preferences (3-state model)
+	`CREATE TABLE IF NOT EXISTS track_preferences (
+		artist_id     INTEGER NOT NULL,
+		lidarr_track_id INTEGER NOT NULL,
+		state         TEXT NOT NULL CHECK(state IN ('keep', 'hit', 'not_keep')),
+		score_at_time INTEGER,
+		created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (artist_id, lidarr_track_id),
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Hit-fallen log (tracks that were hit but fell below threshold)
+	`CREATE TABLE IF NOT EXISTS hit_fallen_log (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		artist_id     INTEGER NOT NULL,
+		lidarr_track_id INTEGER,
+		track_name    TEXT NOT NULL,
+		score_at_fall INTEGER NOT NULL,
+		fallen_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Track popularity (cached from Lidarr/Last.fm)
+	`CREATE TABLE IF NOT EXISTS track_popularity (
+		artist_id     INTEGER NOT NULL,
+		lidarr_track_id INTEGER NOT NULL,
+		play_count    INTEGER DEFAULT 0,
+		last_played   DATETIME,
+		UNIQUE(artist_id, lidarr_track_id),
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Track actions log (audit)
+	`CREATE TABLE IF NOT EXISTS track_actions (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		artist_id   INTEGER NOT NULL,
+		lidarr_track_id INTEGER,
+		action      TEXT NOT NULL,
+		reason      TEXT,
+		timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Pruning log
+	`CREATE TABLE IF NOT EXISTS pruning_log (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		artist_id   INTEGER NOT NULL,
+		album_name  TEXT NOT NULL,
+		action      TEXT NOT NULL,
+		reason      TEXT,
+		count       INTEGER NOT NULL,
+		timestamp   DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
 }
 
+// Artist represents an artist in the watchlist.
+type Artist struct {
+	ID           int64
+	Name         string
+	DeezID       string
+	LidarrID     *int64
+	RootFolder   string
+	AddedBy      string
+	AddedAt      string
+	LastChecked  *string
+}
+
+// ArtistAdd adds a new artist to the watchlist.
+// Returns the new artist ID and an error if any.
+func ArtistAdd(name, deezerID string, lidarrID int64, rootFolder, addedBy string) (int64, error) {
+	result, err := db.Exec(
+		`INSERT INTO artists (name, deezer_id, lidarr_id, root_folder, added_by) VALUES (?, ?, ?, ?, ?)`,
+		name, deezerID, lidarrID, rootFolder, addedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// ArtistGet retrieves an artist by name.
+// Returns the artist and an error if not found.
+func ArtistGet(name string) (*Artist, error) {
+	row := db.QueryRow(
+		`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at, last_checked FROM artists WHERE name = ?`,
+		name,
+	)
+	var a Artist
+	var lidarrID *int64
+	var lastChecked *string
+	err := row.Scan(&a.ID, &a.Name, &a.DeezID, &lidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt, &lastChecked)
+	if err != nil {
+		return nil, err
+	}
+	a.LidarrID = lidarrID
+	a.LastChecked = lastChecked
+	return &a, nil
+}
+
+// ArtistGetByID retrieves an artist by ID.
+// Returns the artist and an error if not found.
+func ArtistGetByID(id int64) (*Artist, error) {
+	row := db.QueryRow(
+		`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at, last_checked FROM artists WHERE id = ?`,
+		id,
+	)
+	var a Artist
+	var lidarrID *int64
+	var lastChecked *string
+	err := row.Scan(&a.ID, &a.Name, &a.DeezID, &lidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt, &lastChecked)
+	if err != nil {
+		return nil, err
+	}
+	a.LidarrID = lidarrID
+	a.LastChecked = lastChecked
+	return &a, nil
+}
+
+// ArtistList returns all artists in the watchlist.
 func ArtistList() ([]*Artist, error) {
-	rows, err := db.Query(`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at FROM artists ORDER BY name`)
+	rows, err := db.Query(
+		`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at, last_checked FROM artists ORDER BY name`,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -151,284 +220,144 @@ func ArtistList() ([]*Artist, error) {
 
 	var artists []*Artist
 	for rows.Next() {
-		a := &Artist{}
-		if err := rows.Scan(&a.ID, &a.Name, &a.DeezerID, &a.LidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt); err != nil {
+		var a Artist
+		var lidarrID *int64
+		var lastChecked *string
+		if err := rows.Scan(&a.ID, &a.Name, &a.DeezID, &lidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt, &lastChecked); err != nil {
 			return nil, err
 		}
-		artists = append(artists, a)
+		a.LidarrID = lidarrID
+		a.LastChecked = lastChecked
+		artists = append(artists, &a)
 	}
-	return artists, nil
+	return artists, rows.Err()
 }
 
-func ArtistGet(name string) (*Artist, error) {
-	row := db.QueryRow(`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at FROM artists WHERE name = ?`, name)
-	a := &Artist{}
-	err := row.Scan(&a.ID, &a.Name, &a.DeezerID, &a.LidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return a, err
-}
-
-func ArtistGetByID(id int64) (*Artist, error) {
-	row := db.QueryRow(`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at FROM artists WHERE id = ?`, id)
-	a := &Artist{}
-	err := row.Scan(&a.ID, &a.Name, &a.DeezerID, &a.LidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	return a, err
-}
-
-func ArtistAdd(name, deezerID string, lidarrID int64, rootFolder, addedBy string) (int64, error) {
-	// Empty deezerID/lidarrID/rootFolder are stored as NULL.
-	var deezerVal interface{}
-	if deezerID != "" {
-		deezerVal = deezerID
-	}
-	var lidarrVal interface{}
-	if lidarrID != 0 {
-		lidarrVal = lidarrID
-	}
-	var rootVal interface{}
-	if rootFolder != "" {
-		rootVal = rootFolder
-	}
-	res, err := db.Exec(
-		`INSERT INTO artists (name, deezer_id, lidarr_id, root_folder, added_by) VALUES (?, ?, ?, ?, ?)`,
-		name, deezerVal, lidarrVal, rootVal, addedBy,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
-}
-
+// ArtistDelete removes an artist by ID.
 func ArtistDelete(id int64) error {
 	_, err := db.Exec(`DELETE FROM artists WHERE id = ?`, id)
 	return err
 }
 
+// ArtistUpdateDeezerID updates an artist's Deezer ID by name.
 func ArtistUpdateDeezerID(name, deezerID string) error {
 	_, err := db.Exec(`UPDATE artists SET deezer_id = ? WHERE name = ?`, deezerID, name)
 	return err
 }
 
+// ArtistUpdateLidarrID updates an artist's Lidarr ID by name.
 func ArtistUpdateLidarrID(name string, lidarrID int64) error {
 	_, err := db.Exec(`UPDATE artists SET lidarr_id = ? WHERE name = ?`, lidarrID, name)
 	return err
 }
 
+// ArtistMarkChecked marks an artist as checked (updates last_checked timestamp).
 func ArtistMarkChecked(id int64) error {
 	_, err := db.Exec(`UPDATE artists SET last_checked = datetime('now') WHERE id = ?`, id)
 	return err
 }
 
-// --- Settings ---
-
-func SettingGet(key string) (string, error) {
-	row := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key)
-	var val string
-	err := row.Scan(&val)
-	if err == sql.ErrNoRows {
-		return "", nil
-	}
-	return val, err
-}
-
-func SettingSet(key, value string) error {
-	_, err := db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, key, value)
-	return err
-}
-
-func SettingDelete(key string) error {
-	_, err := db.Exec(`DELETE FROM settings WHERE key = ?`, key)
-	return err
-}
-
-// --- Check Log ---
-
-func CheckLogInsert(artistID int64, albumName string, deezerURL *string, popularity int, processed bool) error {
-	deezerURLVal := ""
-	if deezerURL != nil {
-		deezerURLVal = *deezerURL
-	}
-	_, err := db.Exec(`INSERT INTO check_log (artist_id, album_name, deezer_url, popularity, processed) VALUES (?, ?, ?, ?, ?)`,
-		artistID, albumName, deezerURLVal, popularity, processed)
-	return err
-}
-
-func CheckLogGet(artistID int64, limit int) ([]map[string]interface{}, error) {
-	rows, err := db.Query(`SELECT id, album_name, deezer_url, popularity, checked_at FROM check_log WHERE artist_id = ? ORDER BY checked_at DESC LIMIT ?`, artistID, limit)
+// GetTrackPreferences returns the track preference state for an artist.
+// Returns a map[lidarrTrackID]state.
+func GetTrackPreferences(artistID int64) (map[int64]string, error) {
+	rows, err := db.Query(
+		`SELECT lidarr_track_id, state FROM track_preferences WHERE artist_id = ?`,
+		artistID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var logs []map[string]interface{}
+	prefs := make(map[int64]string)
 	for rows.Next() {
-		var id int
-		var albumName, deezerURL string
-		var popularity int
-		var checkedAt string
-		if err := rows.Scan(&id, &albumName, &deezerURL, &popularity, &checkedAt); err != nil {
-			continue
+		var lidarrTrackID int64
+		var state string
+		if err := rows.Scan(&lidarrTrackID, &state); err != nil {
+			return nil, err
 		}
-		logs = append(logs, map[string]interface{}{
-			"id":          id,
-			"album_name":   albumName,
-			"deezer_url":  deezerURL,
-			"popularity":  popularity,
-			"checked_at":  checkedAt,
-		})
+		prefs[lidarrTrackID] = state
 	}
-	return logs, nil
+	return prefs, rows.Err()
 }
 
-// --- Monitored Tracks ---
-
-func MonitoredTrackAdd(artistID int64, albumName, trackName string) error {
-	_, err := db.Exec(`INSERT OR IGNORE INTO monitored_tracks (artist_id, album_name, track_name) VALUES (?, ?, ?)`,
-		artistID, albumName, trackName)
-	return err
-}
-
-func MonitoredTracks(artistID int64) ([]string, error) {
-	rows, err := db.Query(`SELECT track_name FROM monitored_tracks WHERE artist_id = ?`, artistID)
+// GetTrackPreferencesForArtist returns track preferences for an artist as a slice.
+func GetTrackPreferencesForArtist(artistID int64) ([]TrackPreference, error) {
+	rows, err := db.Query(
+		`SELECT lidarr_track_id, state, score_at_time FROM track_preferences WHERE artist_id = ? ORDER BY lidarr_track_id`,
+		artistID,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var names []string
+	var prefs []TrackPreference
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			continue
+		var tp TrackPreference
+		if err := rows.Scan(&tp.LidarrTrackID, &tp.State, &tp.ScoreAtTime); err != nil {
+			return nil, err
 		}
-		names = append(names, name)
+		prefs = append(prefs, tp)
 	}
-	return names, nil
+	return prefs, rows.Err()
 }
 
-// --- Never Prune ---
-
-func NeverPruneAdd(artistID int64, albumName, trackName string) error {
-	_, err := db.Exec(`INSERT OR IGNORE INTO never_prune (artist_id, album_name, track_name) VALUES (?, ?, ?)`,
-		artistID, albumName, trackName)
-	return err
-}
-
-func NeverPruneRemove(artistID int64, albumName, trackName string) error {
-	_, err := db.Exec(`DELETE FROM never_prune WHERE artist_id = ? AND album_name = ? AND track_name = ?`,
-		artistID, albumName, trackName)
-	return err
-}
-
-func NeverPruneTracks(artistID int64, albumName string) ([]string, error) {
-	rows, err := db.Query(`SELECT track_name FROM never_prune WHERE artist_id = ? AND album_name = ?`, artistID, albumName)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			continue
-		}
-		names = append(names, name)
-	}
-	return names, nil
-}
-
-// --- Album Status ---
-
-func AlbumStatusSet(artistID int64, albumName, status string, lidarrAlbumID *int64) error {
-	albumID := 0
-	if lidarrAlbumID != nil {
-		albumID = int(*lidarrAlbumID)
-	}
-	_, err := db.Exec(`INSERT OR REPLACE INTO album_status (artist_id, album_name, status, lidarr_album_id, updated_at)
-		VALUES (?, ?, ?, ?, datetime('now'))`,
-		artistID, albumName, status, albumID)
-	return err
-}
-
-func PendingAlbums() ([]map[string]interface{}, error) {
-	rows, err := db.Query(`SELECT artist_id, album_name, lidarr_album_id FROM album_status WHERE status = 'pending'`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var albums []map[string]interface{}
-	for rows.Next() {
-		var artistID, lidarrAlbumID int64
-		var albumName string
-		if err := rows.Scan(&artistID, &albumName, &lidarrAlbumID); err != nil {
-			continue
-		}
-		albums = append(albums, map[string]interface{}{
-			"artist_id":        artistID,
-			"album_name":       albumName,
-			"lidarr_album_id": lidarrAlbumID,
-		})
-	}
-	return albums, nil
-}
-
-// --- Track Popularity ---
-
-func TrackPopularityUpsert(artistID, lidarrTrackID int64, trackName, albumName string, score int, source string) error {
-	_, err := db.Exec(`INSERT OR REPLACE INTO track_popularity (artist_id, lidarr_track_id, track_name, album_name, score, source, checked_at)
-		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-		artistID, lidarrTrackID, trackName, albumName, score, source)
-	return err
-}
-
-func TrackPopularityGet(artistID, lidarrTrackID int64) (int, error) {
-	row := db.QueryRow(`SELECT score FROM track_popularity WHERE artist_id = ? AND lidarr_track_id = ?`, artistID, lidarrTrackID)
-	var score int
-	err := row.Scan(&score)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
-	return score, err
-}
-
-// --- Track Preferences ---
-
-func TrackPreferenceGet(artistID, lidarrTrackID int64) (string, error) {
-	row := db.QueryRow(`SELECT state FROM track_preferences WHERE artist_id = ? AND lidarr_track_id = ?`, artistID, lidarrTrackID)
+// GetTrackPreference returns the track preference state for a specific track.
+func GetTrackPreference(artistID, lidarrTrackID int64) (string, error) {
+	row := db.QueryRow(
+		`SELECT state FROM track_preferences WHERE artist_id = ? AND lidarr_track_id = ?`,
+		artistID, lidarrTrackID,
+	)
 	var state string
 	err := row.Scan(&state)
-	if err == sql.ErrNoRows {
-		return "", nil
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
 	}
-	return state, err
+	return state, nil
 }
 
-func TrackPreferenceSet(artistID, lidarrTrackID int64, state string, scoreAtTime int) error {
-	_, err := db.Exec(`INSERT OR REPLACE INTO track_preferences (artist_id, lidarr_track_id, state, score_at_time, updated_at)
-		VALUES (?, ?, ?, ?, datetime('now'))`,
-		artistID, lidarrTrackID, state, scoreAtTime)
+// UpsertTrackPreference inserts or updates a track preference.
+func UpsertTrackPreference(artistID, lidarrTrackID int64, state string, scoreAtTime int) error {
+	_, err := db.Exec(
+		`INSERT INTO track_preferences (artist_id, lidarr_track_id, state, score_at_time, updated_at) 
+		 VALUES (?, ?, ?, ?, datetime('now'))
+		 ON CONFLICT(artist_id, lidarr_track_id) DO UPDATE SET 
+		 state=excluded.state, score_at_time=excluded.score_at_time, updated_at=datetime('now')`,
+		artistID, lidarrTrackID, state, scoreAtTime,
+	)
 	return err
 }
 
-// --- Hit Fallen Log ---
+// DeleteTrackPreference removes a track preference.
+func DeleteTrackPreference(artistID, lidarrTrackID int64) error {
+	_, err := db.Exec(
+		`DELETE FROM track_preferences WHERE artist_id = ? AND lidarr_track_id = ?`,
+		artistID, lidarrTrackID,
+	)
+	return err
+}
 
+// HitFallenLogInsert logs a hit-fallen event.
 func HitFallenLogInsert(artistID, lidarrTrackID int64, trackName string, scoreAtFall int) error {
-	_, err := db.Exec(`INSERT INTO hit_fallen_log (artist_id, lidarr_track_id, track_name, score_at_fall) VALUES (?, ?, ?, ?)`,
-		artistID, lidarrTrackID, trackName, scoreAtFall)
+	_, err := db.Exec(
+		`INSERT INTO hit_fallen_log (artist_id, lidarr_track_id, track_name, score_at_fall) VALUES (?, ?, ?, ?)`,
+		artistID, lidarrTrackID, trackName, scoreAtFall,
+	)
 	return err
 }
 
+// HitFallenLogGet returns hit-fallen log entries.
 func HitFallenLogGet(limit int) ([]map[string]interface{}, error) {
-	rows, err := db.Query(`SELECT h.id, h.artist_id, a.name, h.lidarr_track_id, h.track_name, h.score_at_fall, h.fallen_at
-		FROM hit_fallen_log h JOIN artists a ON h.artist_id = a.id
-		ORDER BY h.fallen_at DESC LIMIT ?`, limit)
+	rows, err := db.Query(
+		`SELECT h.id, h.artist_id, a.name, h.lidarr_track_id, h.track_name, h.score_at_fall, h.fallen_at
+		 FROM hit_fallen_log h JOIN artists a ON h.artist_id = a.id
+		 ORDER BY h.fallen_at DESC LIMIT ?`,
+		limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -442,30 +371,257 @@ func HitFallenLogGet(limit int) ([]map[string]interface{}, error) {
 			continue
 		}
 		logs = append(logs, map[string]interface{}{
-			"id":              id,
-			"artist_id":       artistID,
-			"artist_name":     artistName,
+			"id":           id,
+			"artist_id":    artistID,
+			"artist_name":  artistName,
 			"lidarr_track_id": lidarrTrackID,
-			"track_name":      trackName,
-			"score_at_fall":   scoreAtFall,
-			"fallen_at":       fallenAt,
+			"track_name":   trackName,
+			"score_at_fall": scoreAtFall,
+			"fallen_at":    fallenAt,
 		})
 	}
-	return logs, nil
+	return logs, rows.Err()
 }
 
-// --- Track Actions ---
-
-func TrackActionLog(artistID, lidarrTrackID int64, action string) error {
-	_, err := db.Exec(`INSERT INTO track_actions (artist_id, lidarr_track_id, action) VALUES (?, ?, ?)`,
-		artistID, lidarrTrackID, action)
+// TrackActionLog logs a track action (monitor/unmonitor/etc).
+func TrackActionLog(artistID, lidarrTrackID int64, action string, reason string) error {
+	_, err := db.Exec(
+		`INSERT INTO track_actions (artist_id, lidarr_track_id, action, reason, timestamp) 
+		 VALUES (?, ?, ?, ?, datetime('now'))`,
+		artistID, lidarrTrackID, action, reason,
+	)
 	return err
 }
 
-// --- Pruning Log ---
-
-func PruningLogInsert(artistID, lidarrTrackID int64, scoreAtPrune int) error {
-	_, err := db.Exec(`INSERT INTO pruning_log (artist_id, lidarr_track_id, score_at_prune) VALUES (?, ?, ?)`,
-		artistID, lidarrTrackID, scoreAtPrune)
+// PruningLogInsert logs a pruning event.
+func PruningLogInsert(artistID int64, albumName string, action string, reason string, count int) error {
+	_, err := db.Exec(
+		`INSERT INTO pruning_log (artist_id, album_name, action, reason, count, timestamp) 
+		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+		artistID, albumName, action, reason, count,
+	)
 	return err
+}
+
+// UpsertTrackPopularity inserts or updates track popularity.
+func UpsertTrackPopularity(artistID, lidarrTrackID int64, score int, source string) error {
+	_, err := db.Exec(
+		`INSERT INTO track_popularity (artist_id, lidarr_track_id, play_count, last_played) 
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(artist_id, lidarr_track_id) DO UPDATE SET 
+		 play_count=excluded.play_count, last_played=excluded.last_played`,
+		artistID, lidarrTrackID, score, source,
+	)
+	return err
+}
+
+// GetTrackPopularity returns track popularity for an artist.
+func GetTrackPopularity(artistID int64) ([]TrackPopularity, error) {
+	rows, err := db.Query(
+		`SELECT lidarr_track_id, play_count, last_played FROM track_popularity WHERE artist_id = ?`,
+		artistID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pops []TrackPopularity
+	for rows.Next() {
+		var tp TrackPopularity
+		if err := rows.Scan(&tp.LidarrTrackID, &tp.PlayCount, &tp.LastPlayed); err != nil {
+			return nil, err
+		}
+		pops = append(pops, tp)
+	}
+	return pops, rows.Err()
+}
+
+// CheckLogInsert logs a check result for an album.
+func CheckLogInsert(artistID int64, albumName string, deezerURL *string, popularity int, processed bool) error {
+	_, err := db.Exec(
+		`INSERT INTO check_log (artist_id, album_name, deezer_url, popularity, processed) 
+		 VALUES (?, ?, ?, ?, ?)`,
+		artistID, albumName, deezerURL, popularity, processed,
+	)
+	return err
+}
+
+// GetCheckLog returns check log entries for an artist.
+func GetCheckLog(artistID int64, limit int) ([]CheckLogEntry, error) {
+	rows, err := db.Query(
+		`SELECT id, album_name, deezer_url, popularity, processed, checked_at 
+		 FROM check_log WHERE artist_id = ? ORDER BY checked_at DESC LIMIT ?`,
+		artistID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []CheckLogEntry
+	for rows.Next() {
+		var entry CheckLogEntry
+		var deezerURL *string
+		if err := rows.Scan(&entry.ID, &entry.AlbumName, &deezerURL, &entry.Popularity, &entry.Processed, &entry.CheckedAt); err != nil {
+			return nil, err
+		}
+		entry.DeezURL = deezerURL
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+// NeverPruneInsert adds an entry to the never_prune list.
+func NeverPruneInsert(artistID int64, albumName string, trackName string) error {
+	_, err := db.Exec(
+		`INSERT OR IGNORE INTO never_prune (artist_id, album_name, track_name) VALUES (?, ?, ?)`,
+		artistID, albumName, trackName,
+	)
+	return err
+}
+
+// NeverPruneDelete removes an entry from the never_prune list.
+func NeverPruneDelete(artistID int64, albumName string, trackName string) error {
+	_, err := db.Exec(
+		`DELETE FROM never_prune WHERE artist_id = ? AND album_name = ? AND track_name = ?`,
+		artistID, albumName, trackName,
+	)
+	return err
+}
+
+// IsNeverPrune checks if a track is in the never_prune list.
+func IsNeverPrune(artistID int64, albumName string, trackName string) (bool, error) {
+	var exists int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM never_prune WHERE artist_id = ? AND album_name = ? AND track_name = ?`,
+		artistID, albumName, trackName,
+	).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
+}
+
+// NeverPruneTracks returns the track names that are never prune for the given artist and album.
+func NeverPruneTracks(artistID int64, albumName string) ([]string, error) {
+	rows, err := db.Query(
+		`SELECT track_name FROM never_prune WHERE artist_id = ? AND album_name = ?`,
+		artistID, albumName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tracks []string
+	for rows.Next() {
+		var track string
+		if err := rows.Scan(&track); err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, track)
+	}
+	return tracks, rows.Err()
+}
+
+// MonitoredTrackInsert adds a track to the monitored_tables list.
+func MonitoredTrackInsert(artistID int64, albumName string, trackName string) error {
+	_, err := db.Exec(
+		`INSERT OR IGNORE INTO monitored_tracks (artist_id, album_name, track_name) VALUES (?, ?, ?)`,
+		artistID, albumName, trackName,
+	)
+	return err
+}
+
+// MonitoredTrackDelete removes a track from the monitored_tables list.
+func MonitoredTrackDelete(artistID int64, albumName string, trackName string) error {
+	_, err := db.Exec(
+		`DELETE FROM monitored_tracks WHERE artist_id = ? AND album_name = ? AND track_name = ?`,
+		artistID, albumName, trackName,
+	)
+	return err
+}
+
+// GetMonitoredTracks returns all monitored tracks for an artist.
+func GetMonitoredTracks(artistID int64) ([]string, error) {
+	rows, err := db.Query(
+		`SELECT track_name FROM monitored_tracks WHERE artist_id = ?`,
+		artistID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tracks []string
+	for rows.Next() {
+		var track string
+		if err := rows.Scan(&track); err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, track)
+	}
+	return tracks, rows.Err()
+}
+
+// SettingGet retrieves a setting value by key.
+// Returns the value and an error if not found.
+func SettingGet(key string) (string, error) {
+	row := db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key)
+	var value string
+	err := row.Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("setting not found: %s", key)
+		}
+		return "", err
+	}
+	return value, nil
+}
+
+// SettingUpdate sets a setting value by key (insert or update).
+func SettingUpdate(key, value string) error {
+	_, err := db.Exec(
+		`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`,
+		key, value,
+	)
+	return err
+}
+
+// SetAlbumStatus sets the album status for display in the UI.
+func SetAlbumStatus(artistID int64, albumName string, status string, albumID int64) error {
+	// We'll store the album status in the settings table with a key like "album_status_<artistID>_<albumName>"
+	key := fmt.Sprintf("album_status_%d_%s", artistID, albumName)
+	return SettingUpdate(key, status)
+}
+
+// GetAlbumStatus retrieves the album status for display in the UI.
+func GetAlbumStatus(artistID int64, albumName string) (string, error) {
+	key := fmt.Sprintf("album_status_%d_%s", artistID, albumName)
+	return SettingGet(key)
+}
+
+// TrackPreference represents a track preference entry.
+type TrackPreference struct {
+	LidarrTrackID int64
+	State         string // keep, hit, not_keep
+	ScoreAtTime   int
+}
+
+// TrackPopularity represents track popularity data.
+type TrackPopularity struct {
+	LidarrTrackID int64
+	PlayCount     int
+	LastPlayed    *string // nullable
+}
+
+// CheckLogEntry represents a check log entry.
+type CheckLogEntry struct {
+	ID         int64
+	AlbumName  string
+	DeezURL    *string // nullable
+	Popularity int
+	Processed  bool
+	CheckedAt  string
 }

@@ -131,12 +131,13 @@ export interface ManageArtistResponse {
 
 export interface HitFallenEntry {
   id: number;
-  artist_id: number;
-  artist_name: string;
-  lidarr_track_id: number;
-  track_name: string;
-  score_at_fall: number;
-  fallen_at: string;
+  artistId: number;
+  artistName: string;
+  trackId: number;
+  trackTitle: string;
+  albumTitle: string;
+  scoreAtFall: number;
+  fallenAt: string;
 }
 
 // ── API Client ─────────────────────────────────────────────────────────────────

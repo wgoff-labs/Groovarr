@@ -263,7 +263,7 @@ func (b *Bot) runAdd(ctx *CommandContext, name string) {
 		rootFolder = "Warren's Music"
 	}
 	addedBy := ctx.event.Message.Author.Username
-	if err := store.ArtistAdd(name, "", 0, rootFolder, addedBy); err != nil {
+	if _, err := store.ArtistAdd(name, "", 0, rootFolder, addedBy); err != nil {
 		b.reply(ctx, fmt.Sprintf("❌ Failed to add artist: %v", err))
 		return
 	}
@@ -277,7 +277,7 @@ func (b *Bot) runRemove(ctx *CommandContext, name string) {
 		b.reply(ctx, fmt.Sprintf("❌ Artist `%s` not found in watchlist.", name))
 		return
 	}
-	if err := store.ArtistDelete(name); err != nil {
+	if err := store.ArtistDelete(artist.ID); err != nil {
 		b.reply(ctx, fmt.Sprintf("❌ Failed to remove: %v", err))
 		return
 	}

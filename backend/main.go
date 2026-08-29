@@ -62,6 +62,7 @@ func main() {
 	mux.HandleFunc("/api/connections", connections.ConnectionsHandler)
 	mux.HandleFunc("/api/connections/logs", connections.LogsHandler)
 	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
+	mux.HandleFunc("/api/status", api.StatusHandler)
 
 	// Serve embedded frontend (handles all non-API routes including SPA routing)
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".

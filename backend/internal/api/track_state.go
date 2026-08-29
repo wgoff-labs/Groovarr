@@ -3,9 +3,10 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"strconv"
 
-	"github.com/wgoff-labs/Groovarr/backend/internal/store"
+	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
 // TrackStateHandler handles POST /api/artist/:artistId/track/:lidarrTrackId/state
@@ -21,15 +22,12 @@ func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
 	const prefix = "/api/artist/"
 	const middle = "/track/"
 	const suffix = "/state"
-	if !hasPrefix(path, prefix) {
+	if !hasPrefixTS(path, prefix) {
 		http.Error(w, "Invalid path", http.StatusBadRequest)
 		return
 	}
-	// Remove prefix
-	rest := path[len(prefix):]
-	// Find the middle part
-	middleIndex := len(rest) - len(suffix) - len(middle) // We'll do a simpler split
-	// Instead, let's split by '/'
+	// Use splitPath to extract parts
+
 	parts := splitPath(path)
 	// Expected: ["", "api", "artist", artistId, "track", lidarrTrackId, "state"]
 	if len(parts) != 7 || parts[1] != "api" || parts[2] != "artist" || parts[4] != "track" || parts[6] != "state" {
@@ -62,7 +60,7 @@ func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set track preference in store
-	if err := store.SetTrackPreference(artistID, lidarrTrackID, req.State); err != nil {
+	if err := store.UpsertTrackPreference(artistID, lidarrTrackID, req.State, 0); err != nil {
 		http.Error(w, "Failed to set track preference", http.StatusInternalServerError)
 		return
 	}
@@ -89,9 +87,9 @@ func filter(s []string, f func(string) bool) []string {
 }
 
 // hasPrefix and hasSuffix are simple helper functions.
-func hasPrefix(s, prefix string) bool {
+func hasPrefixTS(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
-func hasSuffix(s, suffix string) bool {
+func hasSuffixTS(s, suffix string) bool {
 	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
 }
