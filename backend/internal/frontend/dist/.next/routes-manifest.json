@@ -54,6 +54,12 @@
       "namedRegex": "^/artists(?:/)?$"
     },
     {
+      "page": "/logs",
+      "regex": "^/logs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/logs(?:/)?$"
+    },
+    {
       "page": "/settings",
       "regex": "^/settings(?:/)?$",
       "routeKeys": {},

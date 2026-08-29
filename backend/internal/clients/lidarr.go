@@ -57,12 +57,21 @@ type LidarrProfile struct {
 
 func NewLidarrClient() (*LidarrClient, error) {
 	cfg := config.Load()
-	if cfg.LidarrAPIKey == "" {
+	return NewLidarrClientWith(cfg.LidarrURL, cfg.LidarrAPIKey)
+}
+
+// NewLidarrClientWith creates a Lidarr client from explicit URL + API key,
+// useful for the connection manager which may not want to depend on global config.
+func NewLidarrClientWith(url, apiKey string) (*LidarrClient, error) {
+	if url == "" {
+		return nil, fmt.Errorf("LIDARR_URL not set")
+	}
+	if apiKey == "" {
 		return nil, fmt.Errorf("LIDARR_API_KEY not set")
 	}
 	return &LidarrClient{
-		baseURL:          strings.TrimSuffix(cfg.LidarrURL, "/"),
-		apiKey:           cfg.LidarrAPIKey,
+		baseURL:          strings.TrimSuffix(url, "/"),
+		apiKey:           apiKey,
 		client:           &http.Client{Timeout: 30 * time.Second},
 		metaProfileCache: make(map[string]int),
 	}, nil

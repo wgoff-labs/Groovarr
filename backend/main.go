@@ -12,6 +12,7 @@ import (
 
 	"github.com/groovarr/groovarr/backend/internal/api"
 	"github.com/groovarr/groovarr/backend/internal/config"
+	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/discord"
 	"github.com/groovarr/groovarr/backend/internal/frontend"
 	"github.com/groovarr/groovarr/backend/internal/scheduler"
@@ -34,6 +35,9 @@ func main() {
 	// Load persisted settings into config
 	scheduler.LoadPersistedSettings()
 
+	// Initialize external connections (Lidarr, etc.) from saved credentials
+	connections.Init()
+
 	// Create HTTP mux
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
@@ -46,6 +50,8 @@ func main() {
 	mux.HandleFunc("/api/settings", api.SettingsHandler)
 	mux.HandleFunc("/api/keep", api.KeepHandler)
 	mux.HandleFunc("/api/downloads", api.DownloadStatusHandler)
+	mux.HandleFunc("/api/connections", connections.ConnectionsHandler)
+	mux.HandleFunc("/api/connections/logs", connections.LogsHandler)
 
 	// Serve embedded frontend (handles all non-API routes including SPA routing)
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".

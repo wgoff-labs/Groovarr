@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { api, Folder, Profile } from '@/lib/api';
+import Link from 'next/link';
+import { api, Folder, Profile, ConnectionStatus } from '@/lib/api';
 
 // Settings keys
 const KEYS = {
@@ -42,6 +43,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [connStatus, setConnStatus] = useState<ConnectionStatus[]>([]);
+  const [connActing, setConnActing] = useState<string | null>(null);
+  const [connError, setConnError] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
 
   const loadAll = useCallback(async () => {
@@ -85,6 +89,29 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadConnections = useCallback(async () => {
+    try {
+      const data = await api.connections.status();
+      setConnStatus(data.statuses || []);
+      setConnError(null);
+    } catch (e: any) {
+      setConnError(e.message);
+    }
+  }, []);
+
+  const handleConnection = async (service: string, action: 'connect' | 'disconnect') => {
+    setConnActing(service);
+    try {
+      const fn = action === 'connect' ? api.connections.connect : api.connections.disconnect;
+      const data = await fn(service);
+      setConnStatus(data.statuses || []);
+      setConnError(null);
+    } catch (e: any) {
+      setConnError(e.message);
+    }
+    setConnActing(null);
+  };
+
   const reloadLidarr = useCallback(() => {
     loadFolders();
     loadProfiles();
@@ -92,9 +119,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadAll();
+    loadConnections();
     loadFolders();
     loadProfiles();
-  }, [loadAll, loadFolders, loadProfiles]);
+  }, [loadAll, loadConnections, loadFolders, loadProfiles]);
 
   const save = async (key: string, value: string) => {
     setSaving(key);
@@ -106,7 +134,8 @@ export default function SettingsPage() {
       setError(null);
       // If Lidarr connection details changed, refresh the dropdowns
       if (key === 'lidarr_url' || key === 'lidarr_api_key') {
-        setTimeout(reloadLidarr, 500);
+        setTimeout(loadConnections, 800);
+        setTimeout(reloadLidarr, 1200);
       }
     } catch (e: any) {
       setError(`Save failed: ${e.message}`);
@@ -272,6 +301,57 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Connection Status */}
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold">🔌 Connections</h2>
+          <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">
+            📋 Connection Logs →
+          </Link>
+        </div>
+
+        <div className="space-y-2">
+          {connError && (
+            <p className="text-xs text-red-400">Error loading status: {connError}</p>
+          )}
+          {connStatus.filter(s => s.service === 'lidarr').map((svc) => (
+            <div key={svc.service} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-3">
+                <span className="text-lg">🎵</span>
+                <div>
+                  <p className="text-sm font-medium text-white">Lidarr</p>
+                  <p className={`text-xs ${
+                    svc.status === 'connected' ? 'text-emerald-400' :
+                    svc.status === 'error' ? 'text-red-400' :
+                    svc.status === 'connecting' ? 'text-yellow-400' :
+                    'text-gray-500'
+                  }`}>
+                    {svc.status === 'connected' && '✅ Connected'}
+                    {svc.status === 'connecting' && '⏳ Connecting...'}
+                    {svc.status === 'disconnected' && '⭕ Disconnected'}
+                    {svc.status === 'error' && `❌ Error: ${svc.error || 'unknown'}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleConnection('lidarr', svc.status === 'connected' ? 'disconnect' : 'connect')}
+                disabled={connActing === 'lidarr' || svc.status === 'connecting'}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  svc.status === 'connected'
+                    ? 'bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-800/50'
+                    : 'bg-emerald-700 border border-emerald-600 text-emerald-100 hover:bg-emerald-600'
+                }`}
+              >
+                {connActing === 'lidarr' ? '…' : svc.status === 'connected' ? 'Disconnect' : 'Connect'}
+              </button>
+            </div>
+          ))}
+          {connStatus.length === 0 && !connError && (
+            <p className="text-sm text-gray-500 italic">Loading...</p>
+          )}
         </div>
       </div>
 

@@ -18,6 +18,20 @@ export interface Profile {
   name: string;
 }
 
+export interface ConnectionStatus {
+  service: string;
+  status: 'disconnected' | 'connecting' | 'connected' | 'error';
+  error?: string;
+  last_check: string;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  service: string;
+  level: 'info' | 'error' | 'warn';
+  message: string;
+}
+
 export interface CheckResult {
   artist_name: string;
   new_albums_found: number;
@@ -118,5 +132,26 @@ export const api = {
 
   profiles: {
     list: () => fetchJSON<Profile[]>('/api/profiles'),
+  },
+
+  connections: {
+    status: () => fetchJSON<{ statuses: ConnectionStatus[] }>('/api/connections'),
+    connect: (service: string) =>
+      fetchJSON<{ statuses: ConnectionStatus[] }>('/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({ action: `connect_${service}` }),
+      }),
+    disconnect: (service: string) =>
+      fetchJSON<{ statuses: ConnectionStatus[] }>('/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({ action: `disconnect_${service}` }),
+      }),
+    test: (service: string) =>
+      fetchJSON<{ status: string; error?: string }>('/api/connections', {
+        method: 'POST',
+        body: JSON.stringify({ action: `test_${service}` }),
+      }),
+    logs: () => fetchJSON<{ logs: LogEntry[] }>('/api/connections/logs'),
+    clearLogs: () => fetchJSON<{ status: string }>('/api/connections/logs', { method: 'DELETE' }),
   },
 };

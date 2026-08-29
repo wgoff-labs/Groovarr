@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/groovarr/groovarr/backend/internal/clients"
+	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/discord"
 	"github.com/groovarr/groovarr/backend/internal/store"
@@ -33,9 +33,10 @@ func StatusHandler(w http.ResponseWriter, r *http.Request) {
 // FoldersHandler returns all Lidarr root folders (scans Lidarr on every call).
 // Also includes the env-allowed subset if LIDARR_ROOT_FOLDERS is set.
 func FoldersHandler(w http.ResponseWriter, r *http.Request) {
-	c, err := clients.NewLidarrClient()
+	cm := connections.New()
+	c, err := cm.GetLidarrClient()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	folders, err := c.GetRootFolders()
@@ -49,9 +50,10 @@ func FoldersHandler(w http.ResponseWriter, r *http.Request) {
 
 // ProfilesHandler returns all Lidarr quality profiles (scans Lidarr on every call).
 func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
-	c, err := clients.NewLidarrClient()
+	cm := connections.New()
+	c, err := cm.GetLidarrClient()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	profiles, err := c.GetQualityProfiles()
