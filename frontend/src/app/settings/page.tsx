@@ -324,6 +324,20 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      
+      {/* ── Last.fm ── */}
+      <div className="card space-y-3">
+        <h2 className="text-base font-semibold flex items-center gap-2">📊 Last.fm</h2>
+        <p className="text-xs text-gray-400">Get popularity scores from Last.fm for better music recommendations.</p>
+        <div className="max-w-sm">
+          <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
+          <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
+          <p className="text-xs text-gray-500 mt-1">
+            Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a>
+          </p>
+        </div>
+      </div>
+      
 
       {/* ── Lidarr ── */}
       <div className="card space-y-3">
@@ -363,6 +377,20 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      
+      {/* ── Last.fm ── */}
+      <div className="card space-y-3">
+        <h2 className="text-base font-semibold flex items-center gap-2">📊 Last.fm</h2>
+        <p className="text-xs text-gray-400">Get popularity scores from Last.fm for better music recommendations.</p>
+        <div className="max-w-sm">
+          <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
+          <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
+          <p className="text-xs text-gray-500 mt-1">
+            Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a>
+          </p>
+        </div>
+      </div>
+      
 
       {/* ── Discord Bot ── */}
       <div className="card space-y-3">
@@ -424,6 +452,20 @@ export default function SettingsPage() {
 
 
       </div>
+      
+      {/* ── Last.fm ── */}
+      <div className="card space-y-3">
+        <h2 className="text-base font-semibold flex items-center gap-2">📊 Last.fm</h2>
+        <p className="text-xs text-gray-400">Get popularity scores from Last.fm for better music recommendations.</p>
+        <div className="max-w-sm">
+          <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
+          <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
+          <p className="text-xs text-gray-500 mt-1">
+            Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a>
+          </p>
+        </div>
+      </div>
+      
 
       {/* About */}
       <div className="card text-xs text-gray-500 space-y-1">
