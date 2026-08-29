@@ -89,8 +89,16 @@ func mapToServerPath(urlPath string) string {
 		}
 	}
 
-	// Handle static pages like /artists, /settings
-	return "dist/.next/server/app/" + cleanPath + "/index.html"
+	// Handle static pages - try both flat .html format and subdirectory/index.html format
+	// Next.js generates flat files like /artists.html, /settings.html, /index.html
+	flatPath := "dist/.next/server/app/" + cleanPath + ".html"
+	subPath := "dist/.next/server/app/" + cleanPath + "/index.html"
+
+	// Try flat .html first, then subdirectory format
+	if _, err := distFS.Open(flatPath); err == nil {
+		return flatPath
+	}
+	return subPath
 }
 
 func setContentType(w http.ResponseWriter, filePath string) {
