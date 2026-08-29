@@ -36,6 +36,49 @@ const TIMEZONES = [
   'Australia/Sydney', 'Pacific/Auckland', 'UTC',
 ];
 
+// Helpers
+const connLabel = (svc: ConnectionStatus) => {
+  if (svc.status === 'connected') return '✅ Connected';
+  if (svc.status === 'connecting') return '⏳ Connecting...';
+  if (svc.status === 'error') return `❌ ${svc.error || 'Error'}`;
+  return '⭕ Disconnected';
+};
+const connColor = (svc: ConnectionStatus) => {
+  if (svc.status === 'connected') return 'text-emerald-400';
+  if (svc.status === 'connecting') return 'text-yellow-400';
+  if (svc.status === 'error') return 'text-red-400';
+  return 'text-gray-500';
+};
+const connBtn = (
+  svc: ConnectionStatus,
+  acting: boolean,
+  service: string,
+  onAction: (svc: string, action: 'connect' | 'disconnect') => void
+) => {
+  const isConnected = svc.status === 'connected';
+  const isActing = acting || svc.status === 'connecting';
+  if (isConnected) {
+    return (
+      <button
+        onClick={() => onAction(service, 'disconnect')}
+        disabled={isActing}
+        className="px-3 py-1.5 rounded text-sm font-medium bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-800/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {isActing ? '…' : 'Disconnect'}
+      </button>
+    );
+  }
+  return (
+    <button
+      onClick={() => onAction(service, 'connect')}
+      disabled={isActing}
+      className="px-3 py-1.5 rounded text-sm font-medium bg-emerald-700 border border-emerald-600 text-emerald-100 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+    >
+      {isActing ? '…' : 'Connect'}
+    </button>
+  );
+};
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -47,6 +90,10 @@ export default function SettingsPage() {
   const [connActing, setConnActing] = useState<string | null>(null);
   const [connError, setConnError] = useState<string | null>(null);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+
+  const lidarrStatus = connStatus.find(s => s.service === 'lidarr');
+  const discordStatus = connStatus.find(s => s.service === 'discord');
+  const lastfmStatus = connStatus.find(s => s.service === 'lastfm');
 
   const loadAll = useCallback(async () => {
     try {
@@ -72,8 +119,7 @@ export default function SettingsPage() {
   const loadFolders = useCallback(async () => {
     try {
       const folderList = await api.folders.list();
-      const safeFolders = Array.isArray(folderList) ? folderList : [];
-      setFolders(safeFolders);
+      setFolders(Array.isArray(folderList) ? folderList : []);
     } catch {
       setFolders([]);
     }
@@ -82,8 +128,7 @@ export default function SettingsPage() {
   const loadProfiles = useCallback(async () => {
     try {
       const profileList = await api.profiles.list();
-      const safeProfiles = Array.isArray(profileList) ? profileList : [];
-      setProfiles(safeProfiles);
+      setProfiles(Array.isArray(profileList) ? profileList : []);
     } catch {
       setProfiles([]);
     }
@@ -132,7 +177,6 @@ export default function SettingsPage() {
       setSaved(`Saved`);
       setTimeout(() => setSaved(null), 2000);
       setError(null);
-      // If Lidarr connection details changed, refresh the dropdowns
       if (key === 'lidarr_url' || key === 'lidarr_api_key') {
         setTimeout(loadConnections, 800);
         setTimeout(reloadLidarr, 1200);
@@ -151,7 +195,6 @@ export default function SettingsPage() {
     setShowSecrets((s) => ({ ...s, [key]: !s[key] }));
   };
 
-  // Input components
   const TextInput = ({ keyName, placeholder, isSecret = false }: { keyName: string; placeholder?: string; isSecret?: boolean }) => {
     const visible = !isSecret || showSecrets[keyName];
     return (
@@ -208,13 +251,9 @@ export default function SettingsPage() {
         updateField(keyName, newVal);
         save(keyName, newVal);
       }}
-      className={`relative w-11 h-6 rounded-full transition-colors ${
-        settings[keyName] === 'true' ? 'bg-emerald-500' : 'bg-gray-600'
-      }`}
+      className={`relative w-11 h-6 rounded-full transition-colors ${settings[keyName] === 'true' ? 'bg-emerald-500' : 'bg-gray-600'}`}
     >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-        settings[keyName] === 'true' ? 'translate-x-5' : ''
-      }`} />
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${settings[keyName] === 'true' ? 'translate-x-5' : ''}`} />
     </button>
   );
 
@@ -232,32 +271,20 @@ export default function SettingsPage() {
     </div>
   );
 
-  // Section label helper
-  const Label = ({ label }: { label: string }) => (
-    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{label}</p>
-  );
-
   return (
     <div className="space-y-6 max-w-4xl">
       {error && (
-        <div className="rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-red-400 text-sm">
-          {error}
-        </div>
+        <div className="rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-red-400 text-sm">{error}</div>
       )}
       {saved && (
-        <div className="rounded-lg bg-emerald-900/30 border border-emerald-700 px-4 py-3 text-emerald-400 text-sm">
-          ✅ {saved}
-        </div>
+        <div className="rounded-lg bg-emerald-900/30 border border-emerald-700 px-4 py-3 text-emerald-400 text-sm">✅ {saved}</div>
       )}
 
       {/* ── Two-column top row ── */}
       <div className="grid grid-cols-2 gap-4">
-
         {/* Schedule */}
         <div className="card space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            ⏰ Schedule
-          </h2>
+          <h2 className="text-base font-semibold flex items-center gap-2">⏰ Schedule</h2>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Cron Expression</p>
             <TextInput keyName={KEYS.daily_check_cron} placeholder="0 9 * * *" />
@@ -271,9 +298,7 @@ export default function SettingsPage() {
 
         {/* General */}
         <div className="card space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            🎯 General
-          </h2>
+          <h2 className="text-base font-semibold flex items-center gap-2">🎯 General</h2>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Popularity Threshold</p>
             <RangeInput keyName={KEYS.popularity_threshold} min={10} max={100} step={5} />
@@ -289,11 +314,7 @@ export default function SettingsPage() {
                 <button
                   key={value}
                   onClick={() => save(KEYS.download_mode, value)}
-                  className={`card text-left transition-all p-2 ${
-                    settings[KEYS.download_mode] === value
-                      ? 'border-emerald-500 bg-emerald-900/20'
-                      : 'hover:border-gray-500'
-                  }`}
+                  className={`card text-left transition-all p-2 ${settings[KEYS.download_mode] === value ? 'border-emerald-500 bg-emerald-900/20' : 'hover:border-gray-500'}`}
                 >
                   <p className="text-sm font-semibold text-white">{emoji} {title}</p>
                   <p className="text-xs text-gray-400">{desc}</p>
@@ -304,85 +325,19 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Connection Status */}
+      {/* ── Lidarr ── */}
       <div className="card space-y-3">
+        {/* Header: title + status + button */}
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold">🔌 Connections</h2>
-          <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">
-            📋 Connection Logs →
-          </Link>
-        </div>
-
-        <div className="space-y-2">
-          {connError && (
-            <p className="text-xs text-red-400">Error loading status: {connError}</p>
-          )}
-          <>
-            {['lidarr', 'discord', 'lastfm'].map((service: string) => {
-              const svc = connStatus.find((s: ConnectionStatus) => s.service === service);
-              if (!svc) return null;
-              const getIcon = (s: string) => {
-                if (s === 'lidarr') return '🎵';
-                if (s === 'discord') return '💬';
-                if (s === 'lastfm') return '📊';
-                return '🔌';
-              };
-              const getLabel = (s: string) => {
-                if (s === 'lidarr') return 'Lidarr';
-                if (s === 'discord') return 'Discord';
-                if (s === 'lastfm') return 'Last.fm';
-                return service;
-              };
-              return (
-                <div key={svc.service} className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">{getIcon(service)}</span>
-                    <div>
-                      <p className="text-sm font-medium text-white">{getLabel(service)}</p>
-                      <p className={`text-xs ${
-                        svc.status === 'connected' ? 'text-emerald-400' :
-                        svc.status === 'error' ? 'text-red-400' :
-                        svc.status === 'connecting' ? 'text-yellow-400' :
-                        'text-gray-500'
-                      }`}>
-                        {svc.status === 'connected' && '✅ Connected'}
-                        {svc.status === 'connecting' && '⏳ Connecting...'}
-                        {svc.status === 'disconnected' && '⭕ Disconnected'}
-                        {svc.status === 'error' && `❌ Error: ${svc.error || 'unknown'}`}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleConnection(service, svc.status === 'connected' ? 'disconnect' : 'connect')}
-                    disabled={connActing === service || svc.status === 'connecting'}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      svc.status === 'connected'
-                        ? 'bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-800/50'
-                        : svc.status === 'disconnected' || svc.status === 'error'
-                          ? 'bg-emerald-700 border border-emerald-600 text-emerald-100 hover:bg-emerald-600'
-                          : 'bg-gray-600/50 border border-gray-600 text-gray-300'
-                    }`}
-                  >
-                    {connActing === service ? '…' : svc.status === 'connected' ? 'Disconnect' : 'Connect'}
-                  </button>
-                </div>
-              );
-            })}
-          </>
-          {connStatus.length === 0 && !connError && (
-            <p className="text-sm text-gray-500 italic">Loading...</p>
+          <h2 className="text-base font-semibold flex items-center gap-2">🎵 Lidarr</h2>
+          {lidarrStatus && (
+            <div className="flex items-center gap-3">
+              <p className={`text-xs ${connColor(lidarrStatus)}`}>{connLabel(lidarrStatus)}</p>
+              {connBtn(lidarrStatus, connActing === 'lidarr', 'lidarr', handleConnection)}
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Lidarr */}
-      <div className="card space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          🎵 Lidarr
-        </h2>
-        <p className="text-xs text-gray-400">
-          Connect to your Lidarr instance to add artists and track downloads.
-        </p>
+        <p className="text-xs text-gray-400">Connect to your Lidarr instance to add artists and track downloads.</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">URL</p>
@@ -394,45 +349,49 @@ export default function SettingsPage() {
           </div>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Quality Profile</p>
-            {profiles.length > 0 ? (
-              <SelectInput keyName={KEYS.lidarr_quality_profile} options={profiles.map((p) => p.name)} />
-            ) : (
-              <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
-            )}
+            {profiles.length > 0
+              ? <SelectInput keyName={KEYS.lidarr_quality_profile} options={profiles.map((p) => p.name)} />
+              : <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
+            }
           </div>
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Default Root Folder</p>
-            {folders.length > 0 ? (
-              <SelectInput keyName={KEYS.lidarr_default_root_folder} options={folders.map((f) => f.path)} />
-            ) : (
-              <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
-            )}
+            {folders.length > 0
+              ? <SelectInput keyName={KEYS.lidarr_default_root_folder} options={folders.map((f) => f.path)} />
+              : <p className="text-sm text-gray-500 italic">Connect to Lidarr first</p>
+            }
           </div>
         </div>
       </div>
 
-      {/* Last.fm */}
+      {/* ── Discord Bot & Last.fm ── */}
       <div className="card space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          📊 Last.fm
-        </h2>
-        <p className="text-xs text-gray-400">Used to get popularity scores for tracks and albums.</p>
-        <div>
-          <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
-          <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
-          <p className="text-xs text-gray-500 mt-1">Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a></p>
+        {/* Header: title + discord status + logs link */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold flex items-center gap-2">💬 Discord Bot &amp; Last.fm</h2>
+          <div className="flex items-center gap-3">
+            {discordStatus && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Discord</span>
+                <p className={`text-xs ${connColor(discordStatus)}`}>{connLabel(discordStatus)}</p>
+                {connBtn(discordStatus, connActing === 'discord', 'discord', handleConnection)}
+              </div>
+            )}
+            {lastfmStatus && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Last.fm</span>
+                <p className={`text-xs ${connColor(lastfmStatus)}`}>{connLabel(lastfmStatus)}</p>
+                {connBtn(lastfmStatus, connActing === 'lastfm', 'lastfm', handleConnection)}
+              </div>
+            )}
+            <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">📋 Logs →</Link>
+          </div>
         </div>
-      </div>
-
-      {/* Discord */}
-      <div className="card space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          💬 Discord Bot
-        </h2>
         <p className="text-xs text-gray-400">
-          Enable a Discord bot for commands and daily reports. Leave token blank to disable.
+          Enable a Discord bot for commands and daily reports. Last.fm provides popularity scores.
         </p>
 
+        {/* Discord bot config */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="text-xs font-medium text-gray-300 mb-1">Bot Token</p>
@@ -455,7 +414,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 pt-1">
+        <div className="grid grid-cols-2 gap-3">
           <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
             <p className="text-sm font-medium text-white">Allow All Users</p>
             <ToggleInput keyName={KEYS.discord_allow_users} label="Allow All Users" />
@@ -463,6 +422,19 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
             <p className="text-sm font-medium text-white">Auto-Thread</p>
             <ToggleInput keyName={KEYS.discord_auto_thread} label="Auto-Thread" />
+          </div>
+        </div>
+
+        {/* Last.fm inside Discord block */}
+        <div className="mt-4 pt-4 border-t border-gray-700">
+          <h3 className="text-sm font-semibold text-white mb-2">📊 Last.fm Integration</h3>
+          <p className="text-xs text-gray-400 mb-2">Get popularity scores from Last.fm for better music recommendations.</p>
+          <div className="max-w-sm">
+            <p className="text-xs font-medium text-gray-300 mb-1">API Key</p>
+            <TextInput keyName={KEYS.lastfm_api_key} placeholder="your-lastfm-api-key" isSecret />
+            <p className="text-xs text-gray-500 mt-1">
+              Get one at <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener" className="text-emerald-400 hover:underline">last.fm/api/account/create</a>
+            </p>
           </div>
         </div>
       </div>
