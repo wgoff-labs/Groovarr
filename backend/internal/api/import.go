@@ -135,10 +135,10 @@ func ArtistImportHandler(w http.ResponseWriter, r *http.Request) {
 
 // BulkImportRequest is the body for the bulk import endpoint.
 type BulkImportRequest struct {
-	ArtistIDs        []int64 `json:"artistIds"`
-	RootFolder       string  `json:"rootFolder"`
-	QualityProfileID int     `json:"qualityProfileId"`
-	Monitor          string  `json:"monitor"`
+	ArtistIDs        []json.Number `json:"artistIds"`
+	RootFolder       string        `json:"rootFolder"`
+	QualityProfileID int           `json:"qualityProfileId"`
+	Monitor          string        `json:"monitor"`
 }
 
 // BulkImportResponse is the response for the bulk import endpoint.
@@ -179,7 +179,12 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 	skipped := 0
 	var errs []string
 
-	for _, lidarrID := range req.ArtistIDs {
+	for _, lidarrIDRaw := range req.ArtistIDs {
+		lidarrID, err := strconv.ParseInt(string(lidarrIDRaw), 10, 64)
+		if err != nil {
+			errs = append(errs, "invalid artist ID "+string(lidarrIDRaw)+": "+err.Error())
+			continue
+		}
 		// Get artist from Lidarr
 		artist, err := c.GetArtist(lidarrID)
 		if err != nil {

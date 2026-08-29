@@ -34,7 +34,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get artist from store
 	artist, err := store.ArtistGetByID(artistID)
-	if err != nil {
+	if err != nil || artist == nil {
 		http.Error(w, "Artist not found", http.StatusNotFound)
 		return
 	}
@@ -54,51 +54,53 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get monitored tracks if download mode is tracks
-	var monitoredTracks []MonitoredTrackResponse
 	// Track preferences map for all tracks
 	trackPrefs, _ := store.GetTrackPreferences(artistID)
 
-	// Build monitored tracks response by iterating albums
-	if downloadMode, _ := store.SettingGet("general_download_mode"); downloadMode == "tracks" {
-		for _, album := range albums {
-			albumTracks, _ := lidarrClient.GetAlbumTracks(album.ID)
+	// Build albums response (and collect track counts)
+	albumResponses := make([]AlbumResponse, 0, len(albums))
+	allTracks := make([]MonitoredTrackResponse, 0)
+
+	for _, album := range albums {
+		// Fetch track count per album
+		albumTracks, _ := lidarrClient.GetAlbumTracks(album.ID)
+		albumResponses = append(albumResponses, AlbumResponse{
+			LidarrAlbumID: album.ID,
+			Title:         album.Title,
+			Monitored:     album.Monitored,
+			TrackCount:    len(albumTracks),
+		})
+
+		// Only build track list if download mode is tracks
+		if downloadMode, _ := store.SettingGet("general_download_mode"); downloadMode == "tracks" {
 			for _, track := range albumTracks {
 				var currentScore *int
-				monitoredTracks = append(monitoredTracks, MonitoredTrackResponse{
+				var trackState *string
+				if s, ok := trackPrefs[track.ID]; ok && s != "" {
+					trackState = &s
+				}
+				allTracks = append(allTracks, MonitoredTrackResponse{
 					LidarrTrackID: track.ID,
 					Title:         track.Title,
 					AlbumTitle:    album.Title,
+					AlbumLidarrID: album.ID,
+					Downloaded:    track.HasFile,
 					CurrentScore:  currentScore,
-					TrackState: func() *string {
-						if s, ok := trackPrefs[track.ID]; ok && s != "" {
-							return &s
-						}
-						return nil
-					}(),
+					TrackState:    trackState,
 				})
 			}
 		}
 	}
 
-	// Build albums response
-	var albumResponses []AlbumResponse
-	for _, album := range albums {
-		albumResponses = append(albumResponses, AlbumResponse{
-			LidarrAlbumID: album.ID,
-			Title:         album.Title,
-			TrackCount:    0, // fetched per-album via GetAlbumTracks
-		})
-	}
-
 	response := ArtistManageResponse{
 		Artist: ArtistResponse{
-			ID:       artist.ID,
-			Name:     artist.Name,
-			LidarrID: derefPtr(artist.LidarrID),
+			ID:         artist.ID,
+			Name:       artist.Name,
+			LidarrID:   derefPtr(artist.LidarrID),
+			RootFolder: artist.RootFolder,
 		},
-		Albums:     albumResponses,
-		MonitoredTracks: monitoredTracks,
+		Albums: albumResponses,
+		Tracks: allTracks,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -107,28 +109,32 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 
 // Response structs
 type ArtistManageResponse struct {
-	Artist         ArtistResponse      `json:"artist"`
-	Albums         []AlbumResponse     `json:"albums"`
-	MonitoredTracks []MonitoredTrackResponse `json:"monitoredTracks"`
+	Artist ArtistResponse           `json:"artist"`
+	Albums []AlbumResponse          `json:"albums"`
+	Tracks []MonitoredTrackResponse `json:"tracks"`
 }
 
 type ArtistResponse struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	LidarrID int64  `json:"lidarrId"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	LidarrID   int64  `json:"lidarrId"`
+	RootFolder string `json:"rootFolder"`
 }
 
 type AlbumResponse struct {
-	LidarrAlbumID int64 `json:"lidarrAlbumId"`
+	LidarrAlbumID int64  `json:"lidarrId"`
 	Title         string `json:"title"`
 	Year          int    `json:"year"`
 	TrackCount    int    `json:"trackCount"`
+	Monitored     bool   `json:"monitored"`
 }
 
 type MonitoredTrackResponse struct {
-	LidarrTrackID int64   `json:"lidarrTrackId"`
+	LidarrTrackID int64   `json:"lidarrId"`
 	Title         string  `json:"title"`
 	AlbumTitle    string  `json:"albumTitle"`
+	AlbumLidarrID int64   `json:"albumLidarrId"`
+	Downloaded    bool    `json:"downloaded"`
 	CurrentScore  *int    `json:"currentScore,omitempty"`
 	TrackState    *string `json:"trackState,omitempty"`
 }

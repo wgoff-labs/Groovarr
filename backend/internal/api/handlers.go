@@ -10,15 +10,71 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
-// ArtistHandler returns JSON for the artist list.
+// ArtistHandler handles artist list (GET), add (POST), and remove (DELETE).
 func ArtistHandler(w http.ResponseWriter, r *http.Request) {
-	artists, err := store.ArtistList()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		artists, err := store.ArtistList()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(artists)
+
+	case http.MethodPost:
+		var req struct {
+			Name       string `json:"name"`
+			RootFolder string `json:"root_folder"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		addedBy := "manual"
+		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy)
+		if err != nil {
+			http.Error(w, "failed to add artist: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		artist, err := store.ArtistGetByID(id)
+		if err != nil {
+			http.Error(w, "artist added but failed to fetch: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(artist)
+
+	case http.MethodDelete:
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		artist, err := store.ArtistGet(req.Name)
+		if err != nil || artist == nil {
+			http.Error(w, "artist not found", http.StatusNotFound)
+			return
+		}
+		if err := store.ArtistDelete(artist.ID); err != nil {
+			http.Error(w, "failed to remove artist: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(artists)
 }
 
 // StatusHandler returns basic service status.
