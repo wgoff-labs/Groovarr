@@ -141,7 +141,7 @@ func LoadFromDB() error {
 			global.DiscordHomeChannel = id
 		}
 	}
-	if v, err := store.SettingGet("discord_allow_all_users"); err == nil {
+	if v, err := store.SettingGet("discord_allow_users"); err == nil {
 		global.DiscordAllowAllUsers = v == "true"
 	}
 	if v, err := store.SettingGet("discord_auto_thread"); err == nil {

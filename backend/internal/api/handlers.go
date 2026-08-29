@@ -112,7 +112,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		// Reload Discord bot settings if a discord-related key was saved
 		if bot := discord.GetBot(); bot != nil {
 			switch req.Key {
-			case "discord_token", "discord_home_channel", "discord_allow_all_users",
+			case "discord_token", "discord_home_channel", "discord_allow_users",
 				"discord_auto_thread", "discord_require_mention",
 				"discord_allowed_channels", "discord_allowed_users":
 				bot.ReloadSettings()
