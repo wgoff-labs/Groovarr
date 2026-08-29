@@ -17,9 +17,13 @@ export default function DashboardPage() {
       const [s, a] = await Promise.all([api.status(), api.artists.list()]);
       setStatus(s);
       setArtists(a);
+      setCheckResult(null);
+      setPruneResult(null);
       setError(null);
     } catch (e: any) {
       setError(`Cannot reach Groovarr backend: ${e.message}`);
+      setCheckResult(null);
+      setPruneResult(null);
     }
   }, []);
 
