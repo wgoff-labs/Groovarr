@@ -54,6 +54,41 @@ export interface PruneResult {
   error?: string;
 }
 
+export interface LidarrImportArtist {
+  lidarrId: number;
+  name: string;
+  sortName: string;
+  rootFolder: string;
+  qualityProfileId: number;
+  qualityProfile: string;
+  metadataProfileId: number;
+  metadataProfile: string;
+  monitor: string; // "none" | "albums" | "all"
+  alreadyInGroovarr: boolean;
+  genres: string;
+}
+
+export interface ImportListResponse {
+  artists: LidarrImportArtist[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface BulkImportRequest {
+  artistIds: number[];
+  rootFolder?: string;
+  qualityProfileId?: number;
+  monitor?: string;
+}
+
+export interface BulkImportResponse {
+  imported: number;
+  skipped: number;
+  errors?: string[];
+}
+
 // In production, frontend and API are served from the same origin (single binary)
 // In development, this points to the standalone backend
 const BASE = typeof window !== 'undefined' 
@@ -86,6 +121,13 @@ export const api = {
       }),
     remove: (name: string) =>
       fetchJSON<void>('/api/artists', { method: 'DELETE' }),
+    importList: (page: number = 1, limit: number = 20) =>
+      fetchJSON<ImportListResponse>(`/api/artists/import?page=${page}&limit=${limit}`),
+    importBulk: (req: BulkImportRequest) =>
+      fetchJSON<BulkImportResponse>('/api/artists/import/bulk', {
+        method: 'POST',
+        body: JSON.stringify(req),
+      }),
   },
 
   check: (artist?: string) =>

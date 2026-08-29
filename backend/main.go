@@ -38,6 +38,8 @@ func main() {
 	// Create HTTP mux
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
+	mux.HandleFunc("/api/artists/import", api.ArtistImportHandler)
+	mux.HandleFunc("/api/artists/import/bulk", api.ArtistImportBulkHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
 	mux.HandleFunc("/api/folders", api.FoldersHandler)
 	mux.HandleFunc("/api/profiles", api.ProfilesHandler)

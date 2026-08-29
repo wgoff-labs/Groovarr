@@ -90,7 +90,7 @@
       "routeType": "page",
       "response": "complete",
       "compute": "static",
-      "htmlSize": 8693,
+      "htmlSize": 8810,
       "experimentalBypassFor": [
         {
           "type": "header",
@@ -105,6 +105,34 @@
       "initialRevalidateSeconds": false,
       "srcRoute": "/artists",
       "dataRoute": "/artists.rsc",
+      "allowHeader": [
+        "host",
+        "x-matched-path",
+        "x-prerender-revalidate",
+        "x-prerender-revalidate-if-generated",
+        "x-next-revalidated-tags",
+        "x-next-revalidate-tag-token"
+      ]
+    },
+    "/artists/import": {
+      "routeType": "page",
+      "response": "complete",
+      "compute": "static",
+      "htmlSize": 8438,
+      "experimentalBypassFor": [
+        {
+          "type": "header",
+          "key": "next-action"
+        },
+        {
+          "type": "header",
+          "key": "content-type",
+          "value": "multipart/form-data;.*"
+        }
+      ],
+      "initialRevalidateSeconds": false,
+      "srcRoute": "/artists/import",
+      "dataRoute": "/artists/import.rsc",
       "allowHeader": [
         "host",
         "x-matched-path",

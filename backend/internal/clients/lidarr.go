@@ -21,13 +21,16 @@ type LidarrClient struct {
 }
 
 type LidarrArtist struct {
-	ID              int64   `json:"id"`
-	ArtistName     string  `json:"artistName"`
-	ForeignArtistID string `json:"foreignArtistId"`
-	Monitored       bool   `json:"monitored"`
-	RootFolderPath  string `json:"rootFolderPath"`
-	QualityProfileID int   `json:"qualityProfileId"`
-	MetadataProfileID int  `json:"metadataProfileId"`
+	ID                int64  `json:"id"`
+	ArtistName        string `json:"artistName"`
+	ForeignArtistID   string `json:"foreignArtistId"`
+	Monitored         bool   `json:"monitored"`
+	RootFolderPath    string `json:"rootFolderPath"`
+	QualityProfileID  int    `json:"qualityProfileId"`
+	MetadataProfileID int    `json:"metadataProfileId"`
+	SortName          string `json:"sortName"`
+	Monitor           string `json:"monitor"` // "none", "albums", "all"
+	Genres            []string `json:"genres"`
 }
 
 type LidarrAlbum struct {
@@ -281,6 +284,10 @@ func (c *LidarrClient) GetArtist(id int64) (*LidarrArtist, error) {
 		return nil, err
 	}
 	return &artist, nil
+}
+
+func (c *LidarrClient) UpdateArtist(artist *LidarrArtist) error {
+	return c.put(fmt.Sprintf("/artist/%d", artist.ID), artist)
 }
 
 func (c *LidarrClient) GetAllArtists() ([]LidarrArtist, error) {

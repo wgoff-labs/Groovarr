@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { api, Artist, Folder } from '@/lib/api';
 
 export default function ArtistsPage() {
@@ -108,7 +109,12 @@ export default function ArtistsPage() {
 
       {/* Add artist */}
             <div className="card">
-              <h2 className="text-lg font-semibold mb-3">➕ Add Artist</h2>
+              <h2 className="text-lg font-semibold mb-3 flex justify-between items-center">
+                ➕ Add Artist
+                <Link href="/artists/import" className="btn-secondary text-sm">
+                  📥 Import from Lidarr
+                </Link>
+              </h2>
               <div className="space-y-4">
                 <div className="flex gap-3 items-end">
                   <input
