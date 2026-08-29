@@ -29,7 +29,6 @@ type Bot struct {
 	allowUsers  map[string]struct{}
 	allowAll    bool
 	autoThread  bool
-	requireMention bool
 	reportFn    func(string)
 }
 
@@ -51,7 +50,6 @@ func New(token string, reportFn func(string)) (*Bot, error) {
 		allowUsers:    allowUsers,
 		allowAll:      cfg.DiscordAllowAllUsers,
 		autoThread:    cfg.DiscordAutoThread,
-		requireMention: cfg.DiscordRequireMention,
 		reportFn:      reportFn,
 	}
 
@@ -84,7 +82,6 @@ func (b *Bot) ReloadSettings() {
 	b.homeCh = snowflake.ID(cfg.DiscordHomeChannel)
 	b.allowAll = cfg.DiscordAllowAllUsers
 	b.autoThread = cfg.DiscordAutoThread
-	b.requireMention = cfg.DiscordRequireMention
 
 	// Rebuild channel map
 	b.allowChans = make(map[snowflake.ID]struct{}, len(cfg.DiscordAllowedChans))
@@ -154,19 +151,8 @@ func (b *Bot) onMessageCreate(event *events.MessageCreate) {
 		}
 	}
 
-	// Mention or prefix check
-	if b.requireMention {
-		mentioned := false
-		for _, m := range msg.Mentions {
-			if m.ID == b.client.ID() {
-				mentioned = true
-				break
-			}
-		}
-		if !mentioned && !strings.HasPrefix(strings.TrimSpace(msg.Content), b.cfg.CommandPrefix) {
-			return
-		}
-	} else if !strings.HasPrefix(msg.Content, b.cfg.CommandPrefix) {
+	// Prefix check — all commands use the configured prefix (e.g. "?")
+	if !strings.HasPrefix(msg.Content, b.cfg.CommandPrefix) {
 		return
 	}
 

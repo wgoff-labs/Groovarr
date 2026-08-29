@@ -26,7 +26,6 @@ type Config struct {
 	DiscordAllowedUsers   []string // empty = depends on DiscordAllowAllUsers
 	DiscordAllowAllUsers  bool
 	DiscordAutoThread     bool
-	DiscordRequireMention bool
 	CommandPrefix         string
 
 	// Music APIs
@@ -66,7 +65,6 @@ func Load() *Config {
 			DiscordHomeChannel:   int64(getEnvInt("DISCORD_HOME_CHANNEL", 0)),
 			DiscordAllowAllUsers: getEnvBool("DISCORD_ALLOW_ALL_USERS", true),
 			DiscordAutoThread:    getEnvBool("DISCORD_AUTO_THREAD", false),
-			DiscordRequireMention:getEnvBool("DISCORD_REQUIRE_MENTION", false),
 			CommandPrefix:        getEnv("COMMAND_PREFIX", "?"),
 			PopularityThreshold:  getEnvInt("POPULARITY_THRESHOLD", 60),
 			LastFMAPIKey:         getEnv("LASTFM_API_KEY", ""),
@@ -146,9 +144,6 @@ func LoadFromDB() error {
 	}
 	if v, err := store.SettingGet("discord_auto_thread"); err == nil {
 		global.DiscordAutoThread = v == "true"
-	}
-	if v, err := store.SettingGet("discord_require_mention"); err == nil {
-		global.DiscordRequireMention = v == "true"
 	}
 	// Allowed channels: comma-separated snowflake IDs
 	if v, err := store.SettingGet("discord_allowed_channels"); err == nil && v != "" {

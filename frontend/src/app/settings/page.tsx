@@ -21,9 +21,8 @@ const KEYS = {
   // Discord
   discord_token: 'discord_token',
   discord_home_channel: 'discord_home_channel',
-  discord_allow_all_users: 'discord_allow_users',
+  discord_allow_users: 'discord_allow_users',
   discord_auto_thread: 'discord_auto_thread',
-  discord_require_mention: 'discord_require_mention',
   discord_allowed_channels: 'discord_allowed_channels',
   discord_allowed_users: 'discord_allowed_users',
 } as const;
@@ -339,18 +338,14 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 pt-1">
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
             <p className="text-sm font-medium text-white">Allow All Users</p>
-            <ToggleInput keyName={KEYS.discord_allow_all_users} label="Allow All Users" />
+            <ToggleInput keyName={KEYS.discord_allow_users} label="Allow All Users" />
           </div>
           <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
             <p className="text-sm font-medium text-white">Auto-Thread</p>
             <ToggleInput keyName={KEYS.discord_auto_thread} label="Auto-Thread" />
-          </div>
-          <div className="flex items-center justify-between bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
-            <p className="text-sm font-medium text-white">Require Mention</p>
-            <ToggleInput keyName={KEYS.discord_require_mention} label="Require Mention" />
           </div>
         </div>
       </div>

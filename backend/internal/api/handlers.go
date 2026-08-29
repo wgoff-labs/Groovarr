@@ -113,12 +113,13 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if bot := discord.GetBot(); bot != nil {
 			switch req.Key {
 			case "discord_token", "discord_home_channel", "discord_allow_users",
-				"discord_auto_thread", "discord_require_mention",
+				"discord_auto_thread",
 				"discord_allowed_channels", "discord_allowed_users":
 				bot.ReloadSettings()
 			}
 		}
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"key": req.Key, "value": req.Value})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
