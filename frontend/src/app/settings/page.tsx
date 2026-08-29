@@ -364,11 +364,11 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ── Discord Bot & Last.fm ── */}
+      {/* ── Discord Bot ── */}
       <div className="card space-y-3">
-        {/* Header: left=title, right=status rows + logs link */}
+        {/* Header: left=title, right=status + logs link */}
         <div className="grid grid-cols-2">
-          <h2 className="text-base font-semibold flex items-center gap-2">💬 Discord Bot &amp; Last.fm</h2>
+          <h2 className="text-base font-semibold flex items-center gap-2">💬 Discord Bot</h2>
           <div className="space-y-1 text-right">
             <div className="flex items-center justify-end gap-3">
               {discordStatus && (
@@ -379,22 +379,13 @@ export default function SettingsPage() {
                 </>
               )}
             </div>
-            <div className="flex items-center justify-end gap-3">
-              {lastfmStatus && (
-                <>
-                  <span className="text-xs text-gray-400">Last.fm</span>
-                  <p className={`text-xs ${connColor(lastfmStatus)}`}>{connLabel(lastfmStatus)}</p>
-                  {connBtn(lastfmStatus, connActing === 'lastfm', 'lastfm', handleConnection)}
-                </>
-              )}
-            </div>
           </div>
         </div>
         <div className="flex items-center justify-end">
           <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">📋 Connection Logs →</Link>
         </div>
         <p className="text-xs text-gray-400">
-          Enable a Discord bot for commands and daily reports. Last.fm provides popularity scores.
+          Enable a Discord bot for commands and daily reports.
         </p>
 
         {/* Discord bot config */}
