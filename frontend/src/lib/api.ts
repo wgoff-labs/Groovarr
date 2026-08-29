@@ -42,6 +42,9 @@ export interface CheckResult {
   errors: string[];
   added_albums: string[];
   skipped_albums: string[];
+  hits_kept?: number;
+  hits_fallen?: number;
+  tracks_pruned?: number;
 }
 
 export interface PruneResult {
@@ -89,9 +92,56 @@ export interface BulkImportResponse {
   errors?: string[];
 }
 
-// In production, frontend and API are served from the same origin (single binary)
-// In development, this points to the standalone backend
-const BASE = typeof window !== 'undefined' 
+// ── Artist Management Types ──────────────────────────────────────────────────────
+
+export type TrackState = 'keep' | 'hit' | 'not_keep' | '';
+
+export interface ManagedAlbum {
+  lidarrId: number;
+  title: string;
+  year: number;
+  trackCount: number;
+  monitored: boolean;
+  albumType?: string;
+}
+
+export interface ManagedTrack {
+  lidarrId: number;
+  title: string;
+  albumTitle: string;
+  albumLidarrId: number;
+  trackNumber: number;
+  discNumber: number;
+  duration: number; // seconds
+  score: number | null; // popularity score 0-100
+  state: TrackState;
+  downloaded: boolean; // hasFile
+}
+
+export interface ManageArtistResponse {
+  artist: {
+    id: number;
+    name: string;
+    lidarrId: number | null;
+    rootFolder: string | null;
+  };
+  albums: ManagedAlbum[];
+  tracks: ManagedTrack[];
+}
+
+export interface HitFallenEntry {
+  id: number;
+  artist_id: number;
+  artist_name: string;
+  lidarr_track_id: number;
+  track_name: string;
+  score_at_fall: number;
+  fallen_at: string;
+}
+
+// ── API Client ─────────────────────────────────────────────────────────────────
+
+const BASE = typeof window !== 'undefined'
   ? ''  // Browser: use same origin (relative URLs)
   : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080');
 
@@ -128,6 +178,21 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(req),
       }),
+    manage: (artistId: number) =>
+      fetchJSON<ManageArtistResponse>(`/api/artist/${artistId}/manage`),
+  },
+
+  tracks: {
+    setState: (artistId: number, lidarrTrackId: number, state: TrackState) =>
+      fetchJSON<{ ok: boolean }>(`/api/artist/${artistId}/track/${lidarrTrackId}/state`, {
+        method: 'POST',
+        body: JSON.stringify({ state }),
+      }),
+  },
+
+  hitfallen: {
+    list: (limit = 50) =>
+      fetchJSON<{ entries: HitFallenEntry[] }>(`/api/hit-fallen?limit=${limit}`),
   },
 
   check: (artist?: string) =>

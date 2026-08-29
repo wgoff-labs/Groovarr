@@ -16,12 +16,13 @@ type PruneResult struct {
 	AlbumName     string `json:"album_name"`
 	TotalTracks   int    `json:"total_tracks"`
 	KeptTracks    int    `json:"kept_tracks"`
-	PrunedTracks  int    `json:"pruned_tracks"`
+	PrunedTracks  int    `json:"pruned_truned"`
 	AlreadyPruned bool   `json:"already_pruned"`
 	Error         string `json:"error,omitempty"`
 }
 
 // PruneDownloadedAlbums checks all downloaded albums and prunes below-threshold tracks.
+// Respects the 3-state model: "keep" and "hit" tracks are never auto-pruned.
 func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, error) {
 	var artists []*store.Artist
 	if artistFilter != "" {
@@ -47,7 +48,7 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 	var results []PruneResult
 
 	for _, artist := range artists {
-		// Skip non-tracks mode artists
+		// Only prune in tracks mode.
 		mode, _ := store.SettingGet("mode_" + artist.Name)
 		if mode == "" {
 			mode = cfg.DownloadMode
@@ -92,7 +93,7 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 
 			var keep, prune []clients.LidarrTrack
 			for _, t := range downloaded {
-				// Check never-prune
+				// Check never-prune list.
 				npTracks, _ := store.NeverPruneTracks(artist.ID, la.Title)
 				isProtected := false
 				for _, np := range npTracks {
@@ -106,6 +107,15 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 					continue
 				}
 
+				// Check manual 3-state preference.
+				state, _ := store.TrackPreferenceGet(artist.ID, t.ID)
+				if state == "keep" || state == "hit" {
+					// Never auto-prune explicit keep or hit.
+					keep = append(keep, t)
+					continue
+				}
+
+				// not_keep or no preference — use score threshold.
 				score := ScoreTrack(t.Title, scores, t.ID)
 				if score >= cfg.PopularityThreshold {
 					keep = append(keep, t)
@@ -137,7 +147,7 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 				ArtistName:   artist.Name,
 				AlbumName:    la.Title,
 				TotalTracks:  len(downloaded),
-				KeptTracks:  len(keep),
+				KeptTracks:   len(keep),
 				PrunedTracks: deleted,
 			})
 		}
@@ -147,6 +157,7 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 }
 
 // PruneSingleAlbum prunes below-threshold tracks from one specific album.
+// Respects 3-state preferences: "keep" and "hit" tracks are never pruned.
 func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *PruneResult {
 	artist, err := store.ArtistGetByID(artistID)
 	if err != nil || artist == nil {
@@ -188,6 +199,13 @@ func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *Pr
 			keep = append(keep, t)
 			continue
 		}
+
+		state, _ := store.TrackPreferenceGet(artist.ID, t.ID)
+		if state == "keep" || state == "hit" {
+			keep = append(keep, t)
+			continue
+		}
+
 		score := ScoreTrack(t.Title, scores, t.ID)
 		if score >= cfg.PopularityThreshold {
 			keep = append(keep, t)
@@ -198,7 +216,7 @@ func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *Pr
 
 	if len(prune) == 0 {
 		lidarrID := lidarrAlbumID
-		store.AlbumStatusSet(artist.ID, albumName, "pruned", &lidarrID)
+		store.AlbumStatusSet(artist.ID, albumName, "downloaded", &lidarrID)
 		return &PruneResult{
 			ArtistName:   artist.Name,
 			AlbumName:    albumName,
@@ -230,7 +248,7 @@ func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *Pr
 
 	lidarr.SetAlbumMonitored(lidarrAlbumID, false)
 	lidarrID := lidarrAlbumID
-	store.AlbumStatusSet(artist.ID, albumName, "pruned", &lidarrID)
+	store.AlbumStatusSet(artist.ID, albumName, "downloaded", &lidarrID)
 
 	log.Printf("Pruned %d/%d tracks from '%s' by %s", deleted, len(prune), albumName, artist.Name)
 	return &PruneResult{

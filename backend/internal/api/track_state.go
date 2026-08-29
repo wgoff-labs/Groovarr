@@ -1,0 +1,97 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/wgoff-labs/Groovarr/backend/internal/store"
+)
+
+// TrackStateHandler handles POST /api/artist/:artistId/track/:lidarrTrackId/state
+func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get artist ID and track ID from URL: /api/artist/{artistId}/track/{lidarrTrackId}/state
+	path := r.URL.Path
+	// Expected format: /api/artist/{artistId}/track/{lidarrTrackId}/state
+	const prefix = "/api/artist/"
+	const middle = "/track/"
+	const suffix = "/state"
+	if !hasPrefix(path, prefix) {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	// Remove prefix
+	rest := path[len(prefix):]
+	// Find the middle part
+	middleIndex := len(rest) - len(suffix) - len(middle) // We'll do a simpler split
+	// Instead, let's split by '/'
+	parts := splitPath(path)
+	// Expected: ["", "api", "artist", artistId, "track", lidarrTrackId, "state"]
+	if len(parts) != 7 || parts[1] != "api" || parts[2] != "artist" || parts[4] != "track" || parts[6] != "state" {
+		http.Error(w, "Invalid artist track state path", http.StatusBadRequest)
+		return
+	}
+	artistID, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+		return
+	}
+	lidarrTrackID, err := strconv.ParseInt(parts[5], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid track ID", http.StatusBadRequest)
+		return
+	}
+
+	// Decode request body
+	var req struct {
+		State string `json:"state"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	// Validate state
+	if req.State != "keep" && req.State != "hit" && req.State != "not_keep" {
+		http.Error(w, "Invalid state. Must be 'keep', 'hit', or 'not_keep'", http.StatusBadRequest)
+		return
+	}
+
+	// Set track preference in store
+	if err := store.SetTrackPreference(artistID, lidarrTrackID, req.State); err != nil {
+		http.Error(w, "Failed to set track preference", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// splitPath splits a path by '/' and returns the segments.
+func splitPath(path string) []string {
+	return filter(strings.Split(path, "/"), func(s string) bool { return s != "" })
+}
+
+// filter returns a slice containing only the elements of s that satisfy f.
+func filter(s []string, f func(string) bool) []string {
+	var r []string
+	for _, v := range s {
+		if f(v) {
+			r = append(r, v)
+		}
+	}
+	return r
+}
+
+// hasPrefix and hasSuffix are simple helper functions.
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+func hasSuffix(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}

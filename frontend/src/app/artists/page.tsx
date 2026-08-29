@@ -177,6 +177,12 @@ export default function ArtistsPage() {
                     <td className="py-2.5 text-gray-400">{a.added_by}</td>
                     <td className="py-2.5 text-gray-500">{a.added_at?.split('T')[0] ?? '—'}</td>
                     <td className="py-2.5 text-right">
+                      <Link
+                        href={`/artists/${a.id}/manage`}
+                        className="text-xs text-blue-400 hover:text-blue-300 mr-3"
+                      >
+                        🎛️ Manage
+                      </Link>
                       <button
                         onClick={() => runScan(a.name)}
                         className="text-xs text-emerald-400 hover:text-emerald-300 mr-3"

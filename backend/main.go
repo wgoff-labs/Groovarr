@@ -40,7 +40,17 @@ func main() {
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
 	mux.HandleFunc("/api/artists/import", api.ArtistImportHandler)
 	mux.HandleFunc("/api/artists/import/bulk", api.ArtistImportBulkHandler)
-	mux.HandleFunc("/api/status", api.StatusHandler)
+	mux.HandleFunc("/api/artist/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/manage") {
+			api.ArtistManageHandler(w, r)
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/track/") && strings.HasSuffix(r.URL.Path, "/state") {
+			api.TrackStateHandler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
 	mux.HandleFunc("/api/folders", api.FoldersHandler)
 	mux.HandleFunc("/api/profiles", api.ProfilesHandler)
 	mux.HandleFunc("/api/check", api.CheckHandler)
@@ -51,6 +61,7 @@ func main() {
 	mux.HandleFunc("/api/downloads", api.DownloadStatusHandler)
 	mux.HandleFunc("/api/connections", connections.ConnectionsHandler)
 	mux.HandleFunc("/api/connections/logs", connections.LogsHandler)
+	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
 
 	// Serve embedded frontend (handles all non-API routes including SPA routing)
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".

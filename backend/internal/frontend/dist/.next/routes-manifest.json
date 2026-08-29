@@ -27,7 +27,25 @@
     ],
     "fallback": []
   },
-  "dynamicRoutes": [],
+  "dynamicRoutes": [
+    {
+      "page": "/artists/[id]/album/[albumId]/manage",
+      "regex": "^/artists/([^/]+?)/album/([^/]+?)/manage(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid",
+        "nxtPalbumId": "nxtPalbumId"
+      },
+      "namedRegex": "^/artists/(?<nxtPid>[^/]+?)/album/(?<nxtPalbumId>[^/]+?)/manage(?:/)?$"
+    },
+    {
+      "page": "/artists/[id]/manage",
+      "regex": "^/artists/([^/]+?)/manage(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/artists/(?<nxtPid>[^/]+?)/manage(?:/)?$"
+    }
+  ],
   "staticRoutes": [
     {
       "page": "/",

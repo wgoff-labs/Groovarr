@@ -428,6 +428,23 @@ func (c *LidarrClient) GetAlbumTracks(albumID int64) ([]LidarrTrack, error) {
 	return tracks, err
 }
 
+// UnmonitorTrack sets a track to unmonitored (conservative: keeps file on disk).
+func (c *LidarrClient) UnmonitorTrack(trackID int64) error {
+	return c.SetTrackMonitored(trackID, false)
+}
+
+// SearchTrack triggers a Lidarr search for a specific track by ID.
+// Since Lidarr searches at the album level, this queues the parent album for search.
+func (c *LidarrClient) SearchTrack(trackID int64) error {
+	// Get track info to find its parent album.
+	var track LidarrTrack
+	if err := c.get(fmt.Sprintf("/track/%d", trackID), &track); err != nil {
+		return err
+	}
+	// Queue the album for search.
+	return c.SearchAlbum(track.AlbumID)
+}
+
 func (c *LidarrClient) SetTrackMonitored(trackID int64, monitored bool) error {
 	var track LidarrTrack
 	err := c.get(fmt.Sprintf("/track/%d", trackID), &track)

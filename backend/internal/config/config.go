@@ -76,7 +76,7 @@ func Load() *Config {
 			DownloadMode:         getEnv("DOWNLOAD_MODE", "tracks"),
 			DailyCheckCron:       getEnv("DAILY_CHECK_CRON", "0 9 * * *"),
 			Timezone:             getEnv("TIMEZONE", "America/Detroit"),
-			DBPath:               getEnv("DB_PATH", "/data/groovarr.db"),
+			DBPath:               getEnv("DB_PATH", "./groovarr.db"),
 			DBSalt:               getEnv("DB_SALT", ""),
 		}
 	}

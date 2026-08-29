@@ -22,6 +22,9 @@ type CheckResult struct {
 	Errors              []string `json:"errors"`
 	AddedAlbums         []string `json:"added_albums"`
 	SkippedAlbums       []string `json:"skipped_albums"`
+	HitsKept            int      `json:"hits_kept"`
+	HitsFallen          int      `json:"hits_fallen"`
+	TracksPruned        int      `json:"tracks_pruned"`
 }
 
 // RunDailyCheck runs the daily popularity check for all (or one) watched artists.
@@ -113,6 +116,13 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 			}
 		}
 
+		// 3-state model: Only run track-level processing if in "tracks" mode.
+		// In "album" mode, behavior remains: monitor + search the whole album.
+		downloadMode := cfg.DownloadMode
+		if artistMode, _ := store.SettingGet("mode_" + artist.Name); artistMode != "" {
+			downloadMode = artistMode
+		}
+
 		for _, album := range popular {
 			matched := matchAlbum(album.Name, lidarrAlbums)
 			if matched == nil {
@@ -121,51 +131,25 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 				continue
 			}
 
-			// Check which tracks are already downloaded
-			tracks, _ := lidarr.GetAlbumTracks(matched.ID)
-			downloaded := filterDownloaded(tracks)
-
-			popularNames := make(map[string]bool)
-			for _, tp := range album.TrackPopularities {
-				if tp.Popularity >= cfg.PopularityThreshold {
-					popularNames[strings.ToLower(strings.TrimSpace(tp.Name))] = true
-				}
-			}
-
-			alreadyHave := 0
-			missing := 0
-			for name := range popularNames {
-				if downloaded[strings.ToLower(strings.TrimSpace(name))] {
-					alreadyHave++
-				} else {
-					missing++
-				}
-			}
-
-			if len(popularNames) > 0 && missing == 0 {
-				store.AlbumStatusSet(artist.ID, album.Name, "pruned", &matched.ID)
-				result.SkippedAlbums = append(result.SkippedAlbums, fmt.Sprintf("%s (all %d hits already downloaded)", album.Name, alreadyHave))
-				continue
-			}
-
-			if err := lidarr.MonitorAndSearchAlbum(matched.ID); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("Failed to search %s: %v", album.Name, err))
-				continue
-			}
-
-			status := "downloaded"
-			if missing > 0 {
-				status = "pending"
-			}
-			store.AlbumStatusSet(artist.ID, album.Name, status, &matched.ID)
-			store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, album.AvgPopularity, true)
-
-			if missing > 0 {
-				result.AddedAlbums = append(result.AddedAlbums, fmt.Sprintf("%s — %d track(s) queued (%d already have)", album.Name, missing, alreadyHave))
+			if downloadMode == "tracks" {
+				// Per-track 3-state model.
+				hitsKept, hitsFallen, pruned := processTracksThreeState(
+					artist, matched, album, lidarr, cfg.PopularityThreshold, &result,
+				)
+				result.HitsKept += hitsKept
+				result.HitsFallen += hitsFallen
+				result.TracksPruned += pruned
 			} else {
+				// Album mode: existing behavior — monitor + search entire album.
+				if err := lidarr.MonitorAndSearchAlbum(matched.ID); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to search %s: %v", album.Name, err))
+					continue
+				}
+				store.AlbumStatusSet(artist.ID, album.Name, "pending", &matched.ID)
+				store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, album.AvgPopularity, true)
 				result.AddedAlbums = append(result.AddedAlbums, fmt.Sprintf("%s (avg pop: %.1f, type: %s)", album.Name, album.AvgPopularity, album.AlbumType))
+				result.AlbumsAdded++
 			}
-			result.AlbumsAdded++
 		}
 
 		store.ArtistMarkChecked(artist.ID)
@@ -173,6 +157,130 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 	}
 
 	return results, nil
+}
+
+// processTracksThreeState applies the per-track 3-state (keep / hit / not_keep) model
+// for one album. Returns counters for hits kept, hits fallen (logged), and tracks pruned.
+//
+// State semantics (per plan §4):
+//   - "keep"      → ensure downloaded (search if missing); never prune
+//   - "hit"       → if score >= threshold: do nothing; if score < threshold:
+//                   log to hit_fallen_log, leave UI state as "hit", do NOT download,
+//                   do NOT auto-prune (user must act)
+//   - "not_keep"  → if downloaded: unmonitor in Lidarr (files remain); never re-download
+//   - "" (none)   → apply automation: keep if score >= threshold; mark for pruning if
+//                   downloaded AND score < threshold
+func processTracksThreeState(
+	artist *store.Artist,
+	album *clients.LidarrAlbum,
+	deezerAlbum clients.AlbumInfo,
+	lidarr *clients.LidarrClient,
+	threshold int,
+	result *CheckResult,
+) (hitsKept, hitsFallen, pruned int) {
+	tracks, err := lidarr.GetAlbumTracks(album.ID)
+	if err != nil || len(tracks) == 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("No tracks for %s: %v", album.Title, err))
+		return
+	}
+
+	// Map of track name (lower) → score from Deezer/Last.fm popularity.
+	scoreByName := make(map[string]int)
+	for _, tp := range deezerAlbum.TrackPopularities {
+		scoreByName[strings.ToLower(strings.TrimSpace(tp.Name))] = tp.Popularity
+	}
+
+	tracksDownloaded := 0
+	tracksPending := 0
+	anyKeepMissing := false
+
+	for _, t := range tracks {
+		key := strings.ToLower(strings.TrimSpace(t.Title))
+		score := scoreByName[key]
+
+		// Update popularity cache for any future queries.
+		_ = store.TrackPopularityUpsert(artist.ID, t.ID, t.Title, album.Title, score, "deezer")
+
+		state, _ := store.TrackPreferenceGet(artist.ID, t.ID)
+
+		switch state {
+		case "keep":
+			if !t.HasFile {
+				// Search for this specific track in Lidarr.
+				if err := lidarr.SearchTrack(t.ID); err == nil {
+					result.TracksAdded++
+					anyKeepMissing = true
+				}
+			} else {
+				result.TracksSkipped++
+			}
+
+		case "hit":
+			if score >= threshold {
+				hitsKept++
+			} else {
+				// Score fell below threshold — log it but DO NOT change state
+				// and DO NOT auto-prune. User decides.
+				_ = store.HitFallenLogInsert(artist.ID, t.ID, t.Title, score)
+				hitsFallen++
+			}
+
+		case "not_keep":
+			if t.HasFile {
+				// Conservative: unmonitor in Lidarr, leave files on disk.
+				if err := lidarr.UnmonitorTrack(t.ID); err == nil {
+					_ = store.TrackActionLog(artist.ID, t.ID, "unmonitored")
+					pruned++
+				}
+			}
+
+		default:
+			// No preference — apply automation.
+			if score >= threshold {
+				if !t.HasFile {
+					// Trigger search; do not set explicit preference.
+					_ = lidarr.SearchTrack(t.ID)
+					result.TracksAdded++
+					anyKeepMissing = true
+				} else {
+					result.TracksSkipped++
+				}
+			} else {
+				if t.HasFile {
+					// Mark for pruning: unmonitor + log.
+					if err := lidarr.UnmonitorTrack(t.ID); err == nil {
+						_ = store.TrackActionLog(artist.ID, t.ID, "unmonitored")
+						_ = store.PruningLogInsert(artist.ID, t.ID, score)
+						pruned++
+					}
+				}
+			}
+		}
+
+		if t.HasFile {
+			tracksDownloaded++
+		} else {
+			tracksPending++
+		}
+	}
+
+	// Album-level status for the dashboard.
+	albumID := album.ID
+	switch {
+	case hitsFallen > 0:
+		// Album contains a fallen hit — surface as pending review.
+		store.AlbumStatusSet(artist.ID, album.Title, "hit_fallen", &albumID)
+	case anyKeepMissing:
+		store.AlbumStatusSet(artist.ID, album.Title, "pending", &albumID)
+	case tracksDownloaded > 0:
+		store.AlbumStatusSet(artist.ID, album.Title, "downloaded", &albumID)
+	default:
+		store.AlbumStatusSet(artist.ID, album.Title, "skipped", &albumID)
+	}
+	_ = tracksPending
+	store.CheckLogInsert(artist.ID, album.Title, &deezerAlbum.DeezerURL, deezerAlbum.AvgPopularity, true)
+	result.AlbumsAdded++
+	return
 }
 
 func filterPopularAlbums(albums []clients.AlbumInfo) []clients.AlbumInfo {

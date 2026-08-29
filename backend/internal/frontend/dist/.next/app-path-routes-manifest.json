@@ -1,6 +1,8 @@
 {
   "/_global-error/page": "/_global-error",
   "/_not-found/page": "/_not-found",
+  "/artists/[id]/album/[albumId]/manage/page": "/artists/[id]/album/[albumId]/manage",
+  "/artists/[id]/manage/page": "/artists/[id]/manage",
   "/artists/import/page": "/artists/import",
   "/artists/page": "/artists",
   "/logs/page": "/logs",
