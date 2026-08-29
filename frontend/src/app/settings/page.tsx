@@ -327,11 +327,11 @@ export default function SettingsPage() {
 
       {/* ── Lidarr ── */}
       <div className="card space-y-3">
-        {/* Header: title + status + button */}
-        <div className="flex items-center justify-between">
+        {/* Header: left=title, right=status+button */}
+        <div className="grid grid-cols-2 items-center">
           <h2 className="text-base font-semibold flex items-center gap-2">🎵 Lidarr</h2>
           {lidarrStatus && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-3">
               <p className={`text-xs ${connColor(lidarrStatus)}`}>{connLabel(lidarrStatus)}</p>
               {connBtn(lidarrStatus, connActing === 'lidarr', 'lidarr', handleConnection)}
             </div>
@@ -366,26 +366,32 @@ export default function SettingsPage() {
 
       {/* ── Discord Bot & Last.fm ── */}
       <div className="card space-y-3">
-        {/* Header: title + discord status + logs link */}
-        <div className="flex items-center justify-between">
+        {/* Header: left=title, right=status rows + logs link */}
+        <div className="grid grid-cols-2">
           <h2 className="text-base font-semibold flex items-center gap-2">💬 Discord Bot &amp; Last.fm</h2>
-          <div className="flex items-center gap-3">
-            {discordStatus && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Discord</span>
-                <p className={`text-xs ${connColor(discordStatus)}`}>{connLabel(discordStatus)}</p>
-                {connBtn(discordStatus, connActing === 'discord', 'discord', handleConnection)}
-              </div>
-            )}
-            {lastfmStatus && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Last.fm</span>
-                <p className={`text-xs ${connColor(lastfmStatus)}`}>{connLabel(lastfmStatus)}</p>
-                {connBtn(lastfmStatus, connActing === 'lastfm', 'lastfm', handleConnection)}
-              </div>
-            )}
-            <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">📋 Logs →</Link>
+          <div className="space-y-1 text-right">
+            <div className="flex items-center justify-end gap-3">
+              {discordStatus && (
+                <>
+                  <span className="text-xs text-gray-400">Discord</span>
+                  <p className={`text-xs ${connColor(discordStatus)}`}>{connLabel(discordStatus)}</p>
+                  {connBtn(discordStatus, connActing === 'discord', 'discord', handleConnection)}
+                </>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              {lastfmStatus && (
+                <>
+                  <span className="text-xs text-gray-400">Last.fm</span>
+                  <p className={`text-xs ${connColor(lastfmStatus)}`}>{connLabel(lastfmStatus)}</p>
+                  {connBtn(lastfmStatus, connActing === 'lastfm', 'lastfm', handleConnection)}
+                </>
+              )}
+            </div>
           </div>
+        </div>
+        <div className="flex items-center justify-end">
+          <Link href="/logs" className="text-xs text-gray-400 hover:text-emerald-400 transition-colors">📋 Connection Logs →</Link>
         </div>
         <p className="text-xs text-gray-400">
           Enable a Discord bot for commands and daily reports. Last.fm provides popularity scores.
