@@ -143,14 +143,14 @@ var migrations = []string{
 
 // Artist represents an artist in the watchlist.
 type Artist struct {
-	ID           int64
-	Name         string
-	DeezID       string
-	LidarrID     *int64
-	RootFolder   string
-	AddedBy      string
-	AddedAt      string
-	LastChecked  *string
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	DeezID      string `json:"deezer_id"`
+	LidarrID    *int64 `json:"lidarr_id"`
+	RootFolder  string `json:"root_folder"`
+	AddedBy     string `json:"added_by"`
+	AddedAt     string `json:"added_at"`
+	LastChecked *string `json:"last_checked"`
 }
 
 // ArtistAdd adds a new artist to the watchlist.

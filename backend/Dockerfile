@@ -12,7 +12,9 @@ RUN go mod download
 
 # Build
 COPY . .
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o groovarr-backend .
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X main.GitCommit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -o groovarr-backend .
 
 # --- Runtime stage ---
 FROM alpine:3.20

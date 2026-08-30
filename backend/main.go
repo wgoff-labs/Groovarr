@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,10 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/scheduler"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
+
+// Version and GitCommit are set at build time via -ldflags.
+var Version = "dev"
+var GitCommit = "unknown"
 
 func main() {
 	log.SetPrefix("[groovarr] ")
@@ -63,8 +68,9 @@ func main() {
 	mux.HandleFunc("/api/connections/logs", connections.LogsHandler)
 	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
-
-	// Serve embedded frontend (handles all non-API routes including SPA routing)
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"version": Version, "commit": GitCommit})
+	})
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
 	// We need to use a custom handler that routes API vs frontend.
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
