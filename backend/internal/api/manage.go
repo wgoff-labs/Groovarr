@@ -72,7 +72,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Only build track list if download mode is tracks
-		if downloadMode, _ := store.SettingGet("general_download_mode"); downloadMode == "tracks" {
+		if downloadMode, _ := store.SettingGet("download_mode"); downloadMode == "tracks" {
 			for _, track := range albumTracks {
 				var currentScore *int
 				var trackState *string
