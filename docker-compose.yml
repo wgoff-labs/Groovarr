@@ -5,6 +5,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+    image: groovarr-backend:${GIT_COMMIT:-dev}
     container_name: groovarr-backend
     restart: unless-stopped
     ports:

@@ -6,6 +6,10 @@ WORKDIR /build
 # Install CGO deps for SQLite
 RUN apk add --no-cache gcc musl-dev git
 
+# Bake git commit into the binary (ARG passed from docker-compose, defaults to "dev")
+ARG GIT_COMMIT=dev
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # Cache deps
 COPY go.mod go.sum ./
 RUN go mod download
@@ -13,7 +17,7 @@ RUN go mod download
 # Build
 COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.GitCommit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -ldflags="-s -w -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -o groovarr-backend .
 
 # --- Runtime stage ---
