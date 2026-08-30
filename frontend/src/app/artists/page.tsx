@@ -13,6 +13,8 @@ export default function ArtistsPage() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<'name' | 'root_folder' | 'added_by' | 'added_at'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const loadArtists = useCallback(async () => {
     setLoading(true);
@@ -157,20 +159,41 @@ export default function ArtistsPage() {
           <p className="text-gray-400">Loading...</p>
         ) : artists.length === 0 ? (
           <p className="text-gray-400">No artists yet. Add one above.</p>
-        ) : (
+        ) : (() => {
+          const sorted = [...artists].sort((a, b) => {
+            const av = (a[sortField] ?? '').toString().toLowerCase();
+            const bv = (b[sortField] ?? '').toString().toLowerCase();
+            const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+            return sortDir === 'asc' ? cmp : -cmp;
+          });
+          const SortHeader = ({ field, label }: { field: typeof sortField; label: string }) => {
+            const active = sortField === field;
+            return (
+              <th
+                className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400"
+                onClick={() => {
+                  if (active) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+                  else { setSortField(field); setSortDir('asc'); }
+                }}
+              >
+                {label}{active ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
+              </th>
+            );
+          };
+          return (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 font-medium">Artist</th>
-                  <th className="pb-2 font-medium">Folder</th>
-                  <th className="pb-2 font-medium">Added by</th>
-                  <th className="pb-2 font-medium">Added</th>
+                  <SortHeader field="name" label="Artist" />
+                  <SortHeader field="root_folder" label="Folder" />
+                  <SortHeader field="added_by" label="Added by" />
+                  <SortHeader field="added_at" label="Added" />
                   <th className="pb-2 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {artists.map((a) => (
+                {sorted.map((a) => (
                   <tr key={a.id} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
                     <td className="py-2.5 font-medium text-white">{a.name}</td>
                     <td className="py-2.5 text-gray-400">{a.root_folder ?? '—'}</td>
@@ -201,7 +224,8 @@ export default function ArtistsPage() {
               </tbody>
             </table>
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

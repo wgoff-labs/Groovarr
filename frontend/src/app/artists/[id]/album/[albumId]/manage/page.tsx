@@ -24,6 +24,29 @@ export default function AlbumManagePage() {
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  type TrackSortKey = 'trackNumber' | 'title' | 'score' | 'downloaded' | 'state';
+  const [trackSort, setTrackSort] = useState<{ key: TrackSortKey; dir: 'asc' | 'desc' }>({ key: 'trackNumber', dir: 'asc' });
+
+  const toggleSort = (key: TrackSortKey) => {
+    setTrackSort((prev) => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  };
+
+  const SortIcon = ({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) => (
+    <span className="ml-1 text-xs">{active ? (dir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
+
+  const sortedTracks = useMemo(() => {
+    const arr = [...tracks];
+    const dir = trackSort.dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av: any = (a as any)[trackSort.key] ?? '';
+      const bv: any = (b as any)[trackSort.key] ?? '';
+      if (typeof av === 'boolean' && typeof bv === 'boolean') return (av === bv ? 0 : av ? 1 : -1) * dir;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return (av.toString().toLowerCase() < bv.toString().toLowerCase() ? -1 : av.toString().toLowerCase() > bv.toString().toLowerCase() ? 1 : 0) * dir;
+    });
+    return arr;
+  }, [tracks, trackSort]);
 
   const loadAlbum = useCallback(async () => {
     setLoading(true);
@@ -86,10 +109,10 @@ export default function AlbumManagePage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === tracks.length) {
+    if (selected.size === sortedTracks.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(tracks.map((t) => t.lidarrId)));
+      setSelected(new Set(sortedTracks.map((t) => t.lidarrId)));
     }
   };
 
@@ -189,20 +212,17 @@ export default function AlbumManagePage() {
               <thead>
                 <tr className="text-left text-gray-400 border-b border-gray-700">
                   <th className="pb-2 font-medium w-8">
-                    <input type="checkbox" checked={selected.size === tracks.length && tracks.length > 0} onChange={toggleAll} className="rounded" />
+                    <input type="checkbox" checked={selected.size === sortedTracks.length && sortedTracks.length > 0} onChange={toggleAll} className="rounded" />
                   </th>
-                  <th className="pb-2 font-medium w-12">#</th>
-                  <th className="pb-2 font-medium">Track</th>
-                  <th className="pb-2 font-medium">Score</th>
-                  <th className="pb-2 font-medium">Downloaded</th>
-                  <th className="pb-2 font-medium">State</th>
+                  <th className="pb-2 font-medium w-12 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleSort('trackNumber')}>#<SortIcon active={trackSort.key==='trackNumber'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleSort('title')}>Track<SortIcon active={trackSort.key==='title'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleSort('score')}>Score<SortIcon active={trackSort.key==='score'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleSort('downloaded')}>Downloaded<SortIcon active={trackSort.key==='downloaded'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleSort('state')}>State<SortIcon active={trackSort.key==='state'} dir={trackSort.dir} /></th>
                 </tr>
               </thead>
               <tbody>
-                {tracks
-                  .slice()
-                  .sort((a, b) => (a.discNumber - b.discNumber) || (a.trackNumber - b.trackNumber))
-                  .map((t) => (
+                {sortedTracks.map((t) => (
                     <tr key={t.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
                       <td className="py-2">
                         <input type="checkbox" checked={selected.has(t.lidarrId)} onChange={() => toggleTrack(t.lidarrId)} className="rounded" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { api, LidarrImportArtist, ImportListResponse, BulkImportRequest, BulkImportResponse } from '@/lib/api';
 
@@ -17,6 +17,16 @@ export default function ArtistImportPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  type ImportSortKey = 'name' | 'rootFolder' | 'qualityProfile' | 'monitor' | 'alreadyInGroovarr';
+  const [importSort, setImportSort] = useState<{ key: ImportSortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
+
+  const toggleImportSort = (key: ImportSortKey) => {
+    setImportSort((prev) => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  };
+
+  const SortIcon = ({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) => (
+    <span className="ml-1 text-xs">{active ? (dir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
 
   const loadArtists = useCallback(async () => {
     setLoading(true);
@@ -39,6 +49,19 @@ export default function ArtistImportPage() {
   useEffect(() => {
     loadArtists();
   }, [loadArtists]);
+
+  const sortedArtists = useMemo(() => {
+    const arr = [...artists];
+    const dir = importSort.dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av: any = (a as any)[importSort.key] ?? '';
+      const bv: any = (b as any)[importSort.key] ?? '';
+      if (typeof av === 'boolean' && typeof bv === 'boolean') return (av === bv ? 0 : av ? 1 : -1) * dir;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return (av.toString().toLowerCase() < bv.toString().toLowerCase() ? -1 : av.toString().toLowerCase() > bv.toString().toLowerCase() ? 1 : 0) * dir;
+    });
+    return arr;
+  }, [artists, importSort]);
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -220,25 +243,25 @@ export default function ArtistImportPage() {
                   <th className="p-2 text-left text-xs font-medium text-gray-400">
                     Select
                   </th>
-                  <th className="p-2 text-left text-xs font-medium text-gray-400">
-                    Artist Name
+                  <th className="p-2 text-left text-xs font-medium text-gray-400 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleImportSort('name')}>
+                    Artist Name<SortIcon active={importSort.key==='name'} dir={importSort.dir} />
                   </th>
-                  <th className="p-2 text-left text-xs font-medium text-gray-400">
-                    Root Folder
+                  <th className="p-2 text-left text-xs font-medium text-gray-400 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleImportSort('rootFolder')}>
+                    Root Folder<SortIcon active={importSort.key==='rootFolder'} dir={importSort.dir} />
                   </th>
-                  <th className="p-2 text-left text-xs font-medium text-gray-400">
-                    Quality Profile
+                  <th className="p-2 text-left text-xs font-medium text-gray-400 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleImportSort('qualityProfile')}>
+                    Quality Profile<SortIcon active={importSort.key==='qualityProfile'} dir={importSort.dir} />
                   </th>
-                  <th className="p-2 text-left text-xs font-medium text-gray-400">
-                    Monitor
+                  <th className="p-2 text-left text-xs font-medium text-gray-400 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleImportSort('monitor')}>
+                    Monitor<SortIcon active={importSort.key==='monitor'} dir={importSort.dir} />
                   </th>
-                  <th className="p-2 text-left text-xs font-medium text-gray-400">
-                    Status
+                  <th className="p-2 text-left text-xs font-medium text-gray-400 cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleImportSort('alreadyInGroovarr')}>
+                    Status<SortIcon active={importSort.key==='alreadyInGroovarr'} dir={importSort.dir} />
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {artists.map(artist => (
+                {sortedArtists.map(artist => (
                   <tr
                     key={artist.lidarrId}
                     className={`border-b border-gray-700/50 last:border-0 

@@ -44,6 +44,21 @@ export default function ArtistManagePage() {
   const [stateFilter, setStateFilter] = useState<'' | 'unset' | TrackState>('');
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedTracks, setSelectedTracks] = useState<Set<number>>(new Set());
+  type TrackSortKey = 'trackNumber' | 'title' | 'albumTitle' | 'score' | 'downloaded' | 'state';
+  const [trackSort, setTrackSort] = useState<{ key: TrackSortKey; dir: 'asc' | 'desc' }>({ key: 'trackNumber', dir: 'asc' });
+  type AlbumSortKey = 'title' | 'year' | 'trackCount' | 'monitored';
+  const [albumSort, setAlbumSort] = useState<{ key: AlbumSortKey; dir: 'asc' | 'desc' }>({ key: 'title', dir: 'asc' });
+
+  const toggleTrackSort = (key: TrackSortKey) => {
+    setTrackSort((prev) => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  };
+  const toggleAlbumSort = (key: AlbumSortKey) => {
+    setAlbumSort((prev) => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  };
+
+  const SortIcon = ({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) => (
+    <span className="ml-1 text-xs">{active ? (dir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
 
   const loadManage = useCallback(async () => {
     setLoading(true);
@@ -116,6 +131,30 @@ export default function ArtistManagePage() {
     });
   }, [tracks, search, stateFilter]);
 
+  const sortedTracks = useMemo(() => {
+    const arr = [...filteredTracks];
+    const dir = trackSort.dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av: any = (a as any)[trackSort.key] ?? '';
+      const bv: any = (b as any)[trackSort.key] ?? '';
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return (av.toString().toLowerCase() < bv.toString().toLowerCase() ? -1 : av.toString().toLowerCase() > bv.toString().toLowerCase() ? 1 : 0) * dir;
+    });
+    return arr;
+  }, [filteredTracks, trackSort]);
+
+  const sortedAlbums = useMemo(() => {
+    const arr = [...albums];
+    const dir = albumSort.dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av: any = (a as any)[albumSort.key] ?? '';
+      const bv: any = (b as any)[albumSort.key] ?? '';
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return (av.toString().toLowerCase() < bv.toString().toLowerCase() ? -1 : av.toString().toLowerCase() > bv.toString().toLowerCase() ? 1 : 0) * dir;
+    });
+    return arr;
+  }, [albums, albumSort]);
+
   const toggleTrack = (trackId: number) => {
     setSelectedTracks((prev) => {
       const next = new Set(prev);
@@ -126,10 +165,10 @@ export default function ArtistManagePage() {
   };
 
   const toggleAllVisible = () => {
-    if (selectedTracks.size === filteredTracks.length) {
+    if (selectedTracks.size === sortedTracks.length) {
       setSelectedTracks(new Set());
     } else {
-      setSelectedTracks(new Set(filteredTracks.map((t) => t.lidarrId)));
+      setSelectedTracks(new Set(sortedTracks.map((t) => t.lidarrId)));
     }
   };
 
@@ -220,15 +259,15 @@ export default function ArtistManagePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 font-medium">Album</th>
-                  <th className="pb-2 font-medium">Year</th>
-                  <th className="pb-2 font-medium">Tracks</th>
-                  <th className="pb-2 font-medium">Monitored</th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('title')}>Album<SortIcon active={albumSort.key==='title'} dir={albumSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('year')}>Year<SortIcon active={albumSort.key==='year'} dir={albumSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('trackCount')}>Tracks<SortIcon active={albumSort.key==='trackCount'} dir={albumSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('monitored')}>Monitored<SortIcon active={albumSort.key==='monitored'} dir={albumSort.dir} /></th>
                   <th className="pb-2 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {albums.map((a) => (
+                {sortedAlbums.map((a) => (
                   <tr key={a.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
                     <td className="py-2 text-white">{a.title}</td>
                     <td className="py-2 text-gray-400">{a.year || '—'}</td>
@@ -297,7 +336,7 @@ export default function ArtistManagePage() {
           </div>
         )}
 
-        {filteredTracks.length === 0 ? (
+        {sortedTracks.length === 0 ? (
           <p className="text-gray-500 text-sm">No tracks match your filters.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -308,22 +347,22 @@ export default function ArtistManagePage() {
                     <th className="pb-2 font-medium w-8">
                       <input
                         type="checkbox"
-                        checked={selectedTracks.size === filteredTracks.length && filteredTracks.length > 0}
+                        checked={selectedTracks.size === sortedTracks.length && sortedTracks.length > 0}
                         onChange={toggleAllVisible}
                         className="rounded"
                       />
                     </th>
                   )}
-                  <th className="pb-2 font-medium">#</th>
-                  <th className="pb-2 font-medium">Track</th>
-                  <th className="pb-2 font-medium">Album</th>
-                  <th className="pb-2 font-medium">Score</th>
-                  <th className="pb-2 font-medium">Downloaded</th>
-                  <th className="pb-2 font-medium">State</th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('trackNumber')}>#<SortIcon active={trackSort.key==='trackNumber'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('title')}>Track<SortIcon active={trackSort.key==='title'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('albumTitle')}>Album<SortIcon active={trackSort.key==='albumTitle'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('score')}>Score<SortIcon active={trackSort.key==='score'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('downloaded')}>Downloaded<SortIcon active={trackSort.key==='downloaded'} dir={trackSort.dir} /></th>
+                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleTrackSort('state')}>State<SortIcon active={trackSort.key==='state'} dir={trackSort.dir} /></th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTracks.map((t) => (
+                {sortedTracks.map((t) => (
                   <tr key={t.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
                     {bulkMode && (
                       <td className="py-2">
