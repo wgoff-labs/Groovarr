@@ -6,7 +6,11 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        CACHE_BUST: "2"
+        CACHE_BUST: "3"
+        # Set VERSION to the current commit hash when deploying.
+        # Example: VERSION=abc1234 docker compose build
+        # (Leave unset to fall back to version.txt or "dev")
+        VERSION: ${VERSION:-}
     container_name: groovarr
     restart: unless-stopped
     ports:
