@@ -89,6 +89,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 					Title:         track.Title,
 					AlbumTitle:    album.Title,
 					AlbumLidarrID: album.ID,
+					TrackNumber:   track.TrackNumber,
 					Downloaded:    track.HasFile,
 					CurrentScore:  currentScore,
 					TrackState:    trackState,
@@ -139,6 +140,7 @@ type MonitoredTrackResponse struct {
 	Title         string  `json:"title"`
 	AlbumTitle    string  `json:"albumTitle"`
 	AlbumLidarrID int64   `json:"albumLidarrId"`
+	TrackNumber   int     `json:"trackNumber"`
 	Downloaded    bool    `json:"downloaded"`
 	CurrentScore  *int    `json:"currentScore,omitempty"`
 	TrackState    *string `json:"trackState,omitempty"`

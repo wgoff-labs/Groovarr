@@ -40,12 +40,14 @@ type LidarrAlbum struct {
 }
 
 type LidarrTrack struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	Monitored   bool   `json:"monitored"`
-	HasFile     bool   `json:"hasFile"`
-	TrackFileID int64  `json:"trackFileId"`
-	AlbumID     int64  `json:"albumId"`
+	ID                 int64  `json:"id"`
+	Title              string `json:"title"`
+	Monitored          bool   `json:"monitored"`
+	HasFile            bool   `json:"hasFile"`
+	TrackFileID        int64  `json:"trackFileId"`
+	AlbumID            int64  `json:"albumId"`
+	TrackNumber        int    `json:"trackNumber"`
+	AbsoluteTrackNumber int   `json:"absoluteTrackNumber"`
 }
 
 type LidarrRootFolder struct {
