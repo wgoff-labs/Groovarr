@@ -6,6 +6,10 @@ WORKDIR /build
 # Install CGO deps for SQLite
 RUN apk add --no-cache gcc musl-dev git
 
+# Accept GIT_COMMIT from Portainer build args (portainer passes them in),
+# with a fallback to reading from .git/HEAD in the build context.
+ARG GIT_COMMIT=
+
 # Cache deps
 COPY go.mod go.sum ./
 RUN go mod download
@@ -13,31 +17,44 @@ RUN go mod download
 # Build
 COPY . .
 
-# Extract git commit from the build context. The build context is either:
-#   - the full git repo (Portainer "Repository" source, or local git pull)
-#   - a snapshot (regular "Web editor" source)
-# In both cases, .git/HEAD and .git/refs/heads/<branch> are available.
-# We fall back to "dev" if .git/ isn't present.
-RUN GIT_COMMIT=$( \
-      if [ -f .git/HEAD ]; then \
-        ref=$(cat .git/HEAD | tr -d '\n'); \
-        case "$ref" in \
-          ref:*) \
-            branch=$(echo "$ref" | sed 's/^ref: *@@'); \
-            if [ -f ".git/$branch" ]; then \
-              cat ".git/$branch" | cut -c1-7; \
-            else \
-              git rev-parse --short HEAD 2>/dev/null || echo dev; \
-            fi \
-            ;; \
-          *) \
-            echo "$ref" | head -c 7 ;; \
-        esac; \
-      else echo dev; \
-    fi) && \
-    echo "Building with GIT_COMMIT=$GIT_COMMIT" && \
+# Resolve GIT_COMMIT:
+#   1. If passed as --build-arg from Portainer, use it.
+#   2. Otherwise read .git/HEAD from the build context (works for Repository source).
+#   3. Fall back to "dev" if neither is available.
+RUN GIT_COMMIT_ARG="${GIT_COMMIT:-}"; \
+    if [ -n "$GIT_COMMIT_ARG" ]; then \
+      echo "Commit from build arg: $GIT_COMMIT_ARG"; \
+      GIT_COMMIT_VAL="$GIT_COMMIT_ARG"; \
+    elif [ -f .git/HEAD ]; then \
+      echo "[DEBUG] .git/HEAD found, contents: $(cat .git/HEAD)"; \
+      ref=$(cat .git/HEAD | tr -d '\n'); \
+      case "$ref" in \
+        ref:*) \
+          branch=$(echo "$ref" | sed 's/^ref: *//'); \
+          echo "[DEBUG] Detected branch ref: $branch"; \
+          if [ -f ".git/$branch" ]; then \
+            GIT_COMMIT_VAL=$(cat ".git/$branch" | cut -c1-7); \
+            echo "[DEBUG] Read commit from .git/$branch: $GIT_COMMIT_VAL"; \
+          elif [ -f .git/HEAD ] && [ $(cat .git/HEAD | wc -l) -eq 1 ]; then \
+            GIT_COMMIT_VAL=$(cat .git/HEAD | head -c 7); \
+            echo "[DEBUG] Falling back to .git/HEAD content: $GIT_COMMIT_VAL"; \
+          else \
+            GIT_COMMIT_VAL=$(git rev-parse --short HEAD 2>/dev/null || echo dev); \
+            echo "[DEBUG] git rev-parse fallback: $GIT_COMMIT_VAL"; \
+          fi \
+          ;; \
+        *) \
+          GIT_COMMIT_VAL=$(echo "$ref" | head -c 7); \
+          echo "[DEBUG] Detached HEAD: $GIT_COMMIT_VAL"; \
+          ;; \
+      esac; \
+    else \
+      echo "[DEBUG] .git/HEAD not found, using dev"; \
+      GIT_COMMIT_VAL=dev; \
+    fi; \
+    echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL" && \
     CGO_ENABLED=1 GOOS=linux go build \
-        -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT_VAL -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         -o groovarr-backend .
 
 # --- Runtime stage ---
