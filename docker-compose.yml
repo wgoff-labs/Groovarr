@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
       args:
         GIT_COMMIT: ${GIT_COMMIT:-dev}
-    image: groovarr-backend:${GIT_COMMIT:-dev}
-    container_name: groovarr-backend
+    image: groovarr:${GIT_COMMIT:-dev}
+    container_name: groovarr
     restart: unless-stopped
     ports:
       - "${PORT:-8080}:8080"
