@@ -231,3 +231,11 @@ func getEnvSlice(key string) []string {
 
 // DefaultHTTPClient is a shared HTTP client with timeouts.
 var DefaultHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// Get returns a copy of the current global configuration.
+func Get() Config {
+	if global == nil {
+		Load()
+	}
+	return *global
+}

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/groovarr/groovarr/backend/internal/connections"
+	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
@@ -72,7 +73,11 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Only build track list if download mode is tracks
-		if downloadMode, _ := store.SettingGet("download_mode"); downloadMode == "tracks" {
+		downloadMode, _ := store.SettingGet("download_mode")
+		if downloadMode == "" {
+			downloadMode = config.Get().DownloadMode
+		}
+		if downloadMode == "tracks" {
 			for _, track := range albumTracks {
 				var currentScore *int
 				var trackState *string
