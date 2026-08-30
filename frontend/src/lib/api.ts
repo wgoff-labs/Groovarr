@@ -144,7 +144,7 @@ export interface HitFallenEntry {
 
 const BASE = typeof window !== 'undefined'
   ? ''  // Browser: use same origin (relative URLs)
-  : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080');
+  : (process.env.NEXT_PUBLIC_API_URL ?? 'http://10.0.0.203:8080');
 
 async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
