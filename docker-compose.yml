@@ -2,14 +2,10 @@ version: "3.9"
 
 services:
   backend:
-    env_file:
-      - .env
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        GIT_COMMIT: ${GIT_COMMIT:-dev}
-    image: groovarr:${GIT_COMMIT:-dev}
+    image: groovarr:e6ed582
     container_name: groovarr
     restart: unless-stopped
     ports:
