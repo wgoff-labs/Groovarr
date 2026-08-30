@@ -7,12 +7,19 @@ WORKDIR /build
 RUN apk add --no-cache gcc musl-dev git
 
 # Accept GIT_COMMIT from Portainer build args (portainer passes them in),
-# with a fallback to reading from .git/HEAD in the build context.
+# with a fallback to reading from version.txt or .git/HEAD in the build context.
 ARG GIT_COMMIT=
+# CACHE_BUST changes every build to force Docker to re-fetch the build context
+# and re-run all layers after it. Must be updated manually before each push.
+ARG CACHE_BUST=1
 
 # Cache deps
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Touch the version file using the CACHE_BUST arg so this layer (and all
+# subsequent layers including COPY . .) invalidate when CACHE_BUST changes.
+RUN echo "CACHE_BUST=$CACHE_BUST" >> /tmp/.build-marker
 
 # Build
 COPY . .
