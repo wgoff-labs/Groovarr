@@ -17,14 +17,16 @@ RUN go mod download
 # Build
 COPY . .
 
-# Resolve GIT_COMMIT:
-#   1. If passed as --build-arg from Portainer, use it.
-#   2. Otherwise read .git/HEAD from the build context (works for Repository source).
+# Resolve GIT_COMMIT (in priority order):
+#   1. Read from version.txt in the build context (always present in the repo).
+#   2. Read .git/HEAD and follow the branch ref to get the hash.
 #   3. Fall back to "dev" if neither is available.
-RUN GIT_COMMIT_ARG="${GIT_COMMIT:-}"; \
-    if [ -n "$GIT_COMMIT_ARG" ]; then \
-      echo "Commit from build arg: $GIT_COMMIT_ARG"; \
-      GIT_COMMIT_VAL="$GIT_COMMIT_ARG"; \
+RUN echo "[DEBUG] .dockerignore contents:" && cat /.dockerignore 2>/dev/null || echo "(empty or not found)" && \
+    echo "[DEBUG] Build context root ls:" && ls -la /build/ 2>/dev/null | head -5; \
+    GIT_COMMIT_VAL=dev; \
+    if [ -f /build/version.txt ]; then \
+      GIT_COMMIT_VAL=$(cat /build/version.txt | tr -d ' \n'); \
+      echo "[DEBUG] Read GIT_COMMIT=$GIT_COMMIT_VAL from /build/version.txt"; \
     elif [ -f .git/HEAD ]; then \
       echo "[DEBUG] .git/HEAD found, contents: $(cat .git/HEAD)"; \
       ref=$(cat .git/HEAD | tr -d '\n'); \
@@ -49,8 +51,7 @@ RUN GIT_COMMIT_ARG="${GIT_COMMIT:-}"; \
           ;; \
       esac; \
     else \
-      echo "[DEBUG] .git/HEAD not found, using dev"; \
-      GIT_COMMIT_VAL=dev; \
+      echo "[DEBUG] version.txt and .git/HEAD not found, using dev"; \
     fi; \
     echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL" && \
     CGO_ENABLED=1 GOOS=linux go build \
