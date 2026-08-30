@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"path"
@@ -81,8 +82,43 @@ func NewHandler() http.HandlerFunc {
 			return
 		}
 
-		// Fallback: serve index.html so the SPA router can handle any client-side route
-		// (dynamic Next.js routes like /artists/[id]/manage don't get pre-rendered as .html files)
+		// Fallback: serve the SPA shell by stripping the not-found RSC data and
+			// rewriting urlParts/initialTree to match the actual requested URL.
+			// (Dynamic Next.js routes like /artists/[id]/manage don't get pre-rendered
+			// as .html files. index.html hardcodes the dashboard's RSC stream which
+			// would render the dashboard on every route.)
+			content, err = fs.ReadFile(distFS, "dist/.next/server/app/_not-found.html")
+			if err == nil {
+				// Build URL parts from the request path
+				// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
+				cleanPath := strings.TrimPrefix(reqPath, "/")
+				var urlParts []string
+				urlParts = append(urlParts, "")
+				if cleanPath != "" {
+					for _, part := range strings.Split(cleanPath, "/") {
+						urlParts = append(urlParts, part)
+					}
+				}
+				urlPartsJSON := encodeJSONArray(urlParts)
+
+				html := string(content)
+				// Rewrite the not-found urlParts to match the actual URL
+				// The literal string in the HTML is: "urlParts":["","_not-found"]
+				html = strings.Replace(html, `"urlParts":["","_not-found"]`, `"urlParts":`+urlPartsJSON, 1)
+				// Rewrite the not-found initialTree to be just __PAGE__ (no not-found wrapper)
+				// The literal string is: "initialTree":[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]}]]
+				// Replace the children array with just [["",{"children":[{"__PAGE__",{}}]}]]
+				html = strings.Replace(html, `"initialTree":[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]}]]`, `"initialTree":[["",{"children":[{"__PAGE__",{}]}]]`, 1)
+
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
+				w.Write([]byte(html))
+				return
+			}
+
+		// Last resort: try index.html
 		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
 		if err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -95,6 +131,13 @@ func NewHandler() http.HandlerFunc {
 
 		http.NotFound(w, r)
 	}
+}
+
+// encodeJSONArray encodes a string slice as a JSON array (e.g. ["", "a", "b"])
+func encodeJSONArray(parts []string) string {
+	// Use encoding/json for safety
+	b, _ := json.Marshal(parts)
+	return string(b)
 }
 
 // mapToServerPath converts a URL path to the embedded server file path
