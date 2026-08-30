@@ -57,7 +57,8 @@ func NewHandler() http.HandlerFunc {
 			return
 		}
 
-		// Fallback: try index.html (root)
+		// Fallback: serve index.html so the SPA router can handle any client-side route
+		// (dynamic Next.js routes like /artists/[id]/manage don't get pre-rendered as .html files)
 		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
 		if err == nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
