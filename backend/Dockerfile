@@ -23,11 +23,15 @@ RUN GIT_COMMIT=$( \
         ref=$(cat .git/HEAD | tr -d '\n'); \
         case "$ref" in \
           ref:*) \
-            branch=$(echo "$ref" | sed 's@^ref: *@@'); \
-            if [ -f ".git/$branch" ]; then cat ".git/$branch" | tr -d '\n'; \
-            else git rev-parse --short HEAD 2>/dev/null || echo dev; fi \
+            branch=$(echo "$ref" | sed 's/^ref: *@@'); \
+            if [ -f ".git/$branch" ]; then \
+              cat ".git/$branch" | cut -c1-7; \
+            else \
+              git rev-parse --short HEAD 2>/dev/null || echo dev; \
+            fi \
             ;; \
-          *) echo "$ref" | head -c 7 ;; \
+          *) \
+            echo "$ref" | head -c 7 ;; \
         esac; \
       else echo dev; \
     fi) && \
