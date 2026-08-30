@@ -18,15 +18,39 @@ func NewHandler() http.HandlerFunc {
 
 		// Handle Next.js static assets (/_next/static/*)
 		if strings.HasPrefix(reqPath, "/_next/static/") {
-			// Browser requests /_next/static/... but files are stored at .next/static/...
-			// So strip the _next/ to get the actual file path
-			filePath := "dist/.next/static/" + strings.TrimPrefix(reqPath, "/_next/static/")
-			content, err := fs.ReadFile(distFS, filePath)
+			// Browser requests /_next/static/... but some files live at .next/ not .next/static/
+			// Map known manifests to their correct locations
+			file := strings.TrimPrefix(reqPath, "/_next/static/")
+			staticFile := "dist/.next/static/" + file
+
+			// Some manifests live in .next/server/ or .next/ root, not .next/static/
+			if _, err := distFS.Open(staticFile); err != nil {
+				// Try .next/ root for manifest files
+				if _, err2 := distFS.Open("dist/.next/" + file); err2 == nil {
+					content, _ := fs.ReadFile(distFS, "dist/.next/"+file)
+					setContentType(w, "dist/.next/"+file)
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+					w.Write(content)
+					return
+				}
+				// Try .next/server/ for SSR manifests
+				if _, err3 := distFS.Open("dist/.next/server/" + file); err3 == nil {
+					content, _ := fs.ReadFile(distFS, "dist/.next/server/"+file)
+					setContentType(w, "dist/.next/server/"+file)
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+					w.Write(content)
+					return
+				}
+				http.NotFound(w, r)
+				return
+			}
+
+			content, err := fs.ReadFile(distFS, staticFile)
 			if err != nil {
 				http.NotFound(w, r)
 				return
 			}
-			setContentType(w, filePath)
+			setContentType(w, staticFile)
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			w.Write(content)
 			return
