@@ -86,36 +86,39 @@ func NewHandler() http.HandlerFunc {
 			// Build the correct urlParts JSON array from the request path.
 			// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
 			cleanPath := strings.TrimPrefix(reqPath, "/")
-			var urlParts []string
-			urlParts = append(urlParts, "")
-			for _, part := range strings.Split(cleanPath, "/") {
-				if part != "" {
-					urlParts = append(urlParts, part)
-				}
+			urlParts := []string{""}
+			if cleanPath != "" {
+				urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
 			}
 			urlPartsJSON, _ := json.Marshal(urlParts)
 
-			// Build the correct initialTree JSON array.
-			// We want: [[ "", { "children": [ "artists", { "children": [ "1", { "children": [ "manage", { "children": [ "__PAGE__", {} ] } ] } ] } ] ]]
+			// Build the correct initialTree as a nested structure.
+			// For /artists/1/manage:
+			//   [["",{"children":[["artists",{"children":[["1",{"children":[["manage",{"children":[[\"__PAGE__\",{}]]}]]}]]}]]}]]
 			type TreeNode struct {
-				Key       string      `json:"key,omitempty"`
-				Children  []TreeNode  `json:"children,omitempty"`
+				Key      string     `json:"key"`
+				Children []TreeNode `json:"children"`
 			}
-			// Build the tree from the bottom up.
-			leaf := TreeNode{Key: "__PAGE__", Children: []TreeNode{}}
-			manage := TreeNode{Key: "manage", Children: []TreeNode{leaf}}
-			artist1 := TreeNode{Key: "1", Children: []TreeNode{manage}}
-			artists := TreeNode{Key: "artists", Children: []TreeNode{artist1}}
-			root := TreeNode{Key: "", Children: []TreeNode{artists}}
-			tree := []TreeNode{root}
-			initialTree, _ := json.Marshal(tree)
+			// Build tree bottom-up. Leaf = ["__PAGE__", {}]
+			leaf := TreeNode{Key: "__PAGE__"}
+			// Wrap each path segment
+			current := leaf
+			// Reverse the path parts to wrap from the deepest up
+			parts := []string{}
+			if cleanPath != "" {
+				parts = strings.Split(cleanPath, "/")
+			}
+			// Build from innermost outward: for parts ["artists","1","manage"]
+			// innermost is "manage" (wraps __PAGE__), then "1" wraps that, etc.
+			for i := len(parts) - 1; i >= 0; i-- {
+				current = TreeNode{Key: parts[i], Children: []TreeNode{current}}
+			}
+			root := TreeNode{Key: "", Children: []TreeNode{current}}
+			initialTree, _ := json.Marshal([]TreeNode{root})
 
 			// Replace the urlParts and initialTree in the __next_f.push[0] block.
-			// The strings in the HTML are escaped due to being inside a JSON string in JavaScript:
-			//   "urlParts":["",""]
-			//   "initialTree":["",{"children":[{"__PAGE__",{}}]}]
 			html = strings.Replace(html, `"urlParts":["",""]`, `"urlParts":`+string(urlPartsJSON), 1)
-			html = strings.Replace(html, `"initialTree":["",{"children":[{"__PAGE__",{}}]}]`, `"initialTree":`+string(initialTree), 1)
+			html = strings.Replace(html, `"initialTree":["",{"children":["__PAGE__",{}]}]`, `"initialTree":`+string(initialTree), 1)
 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
