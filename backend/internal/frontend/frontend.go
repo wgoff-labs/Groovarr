@@ -117,8 +117,8 @@ func NewHandler() http.HandlerFunc {
 			initialTree, _ := json.Marshal([]TreeNode{root})
 
 			// Replace the urlParts and initialTree in the __next_f.push[0] block.
-			html = strings.Replace(html, `"urlParts":["",""]`, `"urlParts":`+string(urlPartsJSON), 1)
-			html = strings.Replace(html, `"initialTree":["",{"children":["__PAGE__",{}]}]`, `"initialTree":`+string(initialTree), 1)
+			html = strings.Replace(html, `\"urlParts\":[\"\",\"\"]`, `"urlParts":`+string(urlPartsJSON), 1)
+			html = strings.Replace(html, `\"initialTree\":[\"\",{"children":[\"__PAGE__\",{}]}]`, `"initialTree":`+string(initialTree), 1)
 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
