@@ -257,4 +257,6 @@ export const api = {
     logs: () => fetchJSON<{ logs: LogEntry[] }>('/api/connections/logs'),
     clearLogs: () => fetchJSON('/api/connections/logs', { method: 'DELETE' }),
   },
+
+  version: () => fetchJSON<{ version: string; commit: string; build: string }>('/api/version'),
 };

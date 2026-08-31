@@ -449,7 +449,24 @@ export default function SettingsPage() {
       <div className="card text-xs text-gray-500 space-y-1">
         <p>Groovarr connects Lidarr with Deezer &amp; Last.fm to automatically filter your music library to only the popular releases.</p>
         <p>Settings stored in SQLite · <code className="text-gray-400">/data/groovarr.db</code></p>
+        <VersionBadge />
       </div>
     </div>
+  );
+}
+
+function VersionBadge() {
+  const [info, setInfo] = useState<{ version: string; commit: string; build: string } | null>(null);
+  useEffect(() => {
+    api.version()
+      .then(setInfo)
+      .catch(() => setInfo(null));
+  }, []);
+  if (!info) return <p className="text-gray-600">Version: unknown</p>;
+  return (
+    <p className="text-gray-600">
+      Version: <span className="text-gray-400">build #{info.build}</span>{' '}
+      <span className="text-gray-500">({info.commit})</span>
+    </p>
   );
 }
