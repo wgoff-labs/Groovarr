@@ -20,9 +20,11 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
-// Version and GitCommit are set at build time via -ldflags.
+// Version, GitCommit, and BuildNumber are set at build time via -ldflags.
+// BuildNumber is auto-incremented every commit (git rev-list --count HEAD).
 var Version = "dev"
 var GitCommit = "unknown"
+var BuildNumber = "0"
 
 func main() {
 	log.SetPrefix("[groovarr] ")
@@ -69,7 +71,7 @@ func main() {
 	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"version": Version, "commit": GitCommit})
+		json.NewEncoder(w).Encode(map[string]string{"version": Version, "commit": GitCommit, "build": BuildNumber})
 	})
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
 	// We need to use a custom handler that routes API vs frontend.

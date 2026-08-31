@@ -70,9 +70,10 @@ RUN echo "[DEBUG] .dockerignore contents:" && cat /.dockerignore 2>/dev/null || 
     else \
       echo "[DEBUG] version.txt and .git/HEAD not found, using dev"; \
     fi; \
-    echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL" && \
+    BUILD_NUM=$(git rev-list --count HEAD 2>/dev/null || echo "0"); \
+    echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL BUILD_NUM=$BUILD_NUM" && \
     CGO_ENABLED=1 GOOS=linux go build \
-        -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT_VAL -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT_VAL -X main.BuildNumber=$BUILD_NUM -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         -o groovarr-backend .
 
 # --- Runtime stage ---

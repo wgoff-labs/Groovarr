@@ -19,14 +19,10 @@ func NewHandler() http.HandlerFunc {
 
 		// Handle Next.js static assets (/_next/static/*)
 		if strings.HasPrefix(reqPath, "/_next/static/") {
-			// Browser requests /_next/static/... but some files live at .next/ not .next/static/
-			// Map known manifests to their correct locations
 			file := strings.TrimPrefix(reqPath, "/_next/static/")
 			staticFile := "dist/.next/static/" + file
 
-			// Some manifests live in .next/server/ or .next/ root, not .next/static/
 			if _, err := distFS.Open(staticFile); err != nil {
-				// Try .next/ root for manifest files
 				if _, err2 := distFS.Open("dist/.next/" + file); err2 == nil {
 					content, _ := fs.ReadFile(distFS, "dist/.next/"+file)
 					setContentType(w, "dist/.next/"+file)
@@ -34,7 +30,6 @@ func NewHandler() http.HandlerFunc {
 					w.Write(content)
 					return
 				}
-				// Try .next/server/ for SSR manifests
 				if _, err3 := distFS.Open("dist/.next/server/" + file); err3 == nil {
 					content, _ := fs.ReadFile(distFS, "dist/.next/server/"+file)
 					setContentType(w, "dist/.next/server/"+file)
@@ -82,62 +77,56 @@ func NewHandler() http.HandlerFunc {
 			return
 		}
 
-		// Fallback: serve the SPA shell by stripping the not-found RSC data and
-			// rewriting urlParts/initialTree to match the actual requested URL.
-			// (Dynamic Next.js routes like /artists/[id]/manage don't get pre-rendered
-			// as .html files. index.html hardcodes the dashboard's RSC stream which
-			// would render the dashboard on every route.)
-			content, err = fs.ReadFile(distFS, "dist/.next/server/app/_not-found.html")
-			if err == nil {
-				// Build URL parts from the request path
-				// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
-				cleanPath := strings.TrimPrefix(reqPath, "/")
-				var urlParts []string
-				urlParts = append(urlParts, "")
-				if cleanPath != "" {
-					for _, part := range strings.Split(cleanPath, "/") {
-						urlParts = append(urlParts, part)
-					}
-				}
-				urlPartsJSON := encodeJSONArray(urlParts)
-
-				html := string(content)
-				// Rewrite the not-found urlParts to match the actual URL
-				// The literal string in the HTML is: "urlParts":["","_not-found"]
-				html = strings.Replace(html, `"urlParts":["","_not-found"]`, `"urlParts":`+urlPartsJSON, 1)
-				// Rewrite the not-found initialTree to be just __PAGE__ (no not-found wrapper)
-				// The literal string is: "initialTree":[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]}]]
-				// Replace the children array with just [["",{"children":[{"__PAGE__",{}}]}]]
-				html = strings.Replace(html, `"initialTree":[["",{"children":["/_not-found",{"children":["__PAGE__",{}]}]}]]`, `"initialTree":[["",{"children":[{"__PAGE__",{}]}]]`, 1)
-
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-				w.Header().Set("Pragma", "no-cache")
-				w.Header().Set("Expires", "0")
-				w.Write([]byte(html))
-				return
-			}
-
-		// Last resort: try index.html
+		// SPA Fallback: serve index.html with rewritten urlParts and initialTree for the actual URL.
+		// This allows the Next.js client-side router to render the correct page for dynamic routes.
 		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
 		if err == nil {
+			html := string(content)
+
+			// Build the correct urlParts JSON array from the request path.
+			// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
+			cleanPath := strings.TrimPrefix(reqPath, "/")
+			var urlParts []string
+			urlParts = append(urlParts, "")
+			for _, part := range strings.Split(cleanPath, "/") {
+				if part != "" {
+					urlParts = append(urlParts, part)
+				}
+			}
+			urlPartsJSON, _ := json.Marshal(urlParts)
+
+			// Build the correct initialTree JSON array.
+			// We want: [[ "", { "children": [ "artists", { "children": [ "1", { "children": [ "manage", { "children": [ "__PAGE__", {} ] } ] } ] } ] ]]
+			type TreeNode struct {
+				Key       string      `json:"key,omitempty"`
+				Children  []TreeNode  `json:"children,omitempty"`
+			}
+			// Build the tree from the bottom up.
+			leaf := TreeNode{Key: "__PAGE__", Children: []TreeNode{}}
+			manage := TreeNode{Key: "manage", Children: []TreeNode{leaf}}
+			artist1 := TreeNode{Key: "1", Children: []TreeNode{manage}}
+			artists := TreeNode{Key: "artists", Children: []TreeNode{artist1}}
+			root := TreeNode{Key: "", Children: []TreeNode{artists}}
+			tree := []TreeNode{root}
+			initialTree, _ := json.Marshal(tree)
+
+			// Replace the urlParts and initialTree in the __next_f.push[0] block.
+			// The strings in the HTML are escaped due to being inside a JSON string in JavaScript:
+			//   "urlParts":["",""]
+			//   "initialTree":["",{"children":[{"__PAGE__",{}}]}]
+			html = strings.Replace(html, `"urlParts":["",""]`, `"urlParts":`+string(urlPartsJSON), 1)
+			html = strings.Replace(html, `"initialTree":["",{"children":[{"__PAGE__",{}}]}]`, `"initialTree":`+string(initialTree), 1)
+
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
-			w.Write(content)
+			w.Write([]byte(html))
 			return
 		}
 
 		http.NotFound(w, r)
 	}
-}
-
-// encodeJSONArray encodes a string slice as a JSON array (e.g. ["", "a", "b"])
-func encodeJSONArray(parts []string) string {
-	// Use encoding/json for safety
-	b, _ := json.Marshal(parts)
-	return string(b)
 }
 
 // mapToServerPath converts a URL path to the embedded server file path
@@ -146,7 +135,6 @@ func mapToServerPath(urlPath string) string {
 		return "dist/.next/server/app/index.html"
 	}
 
-	// Remove leading slash
 	cleanPath := strings.TrimPrefix(urlPath, "/")
 
 	// Handle Next.js data manifest
@@ -158,11 +146,9 @@ func mapToServerPath(urlPath string) string {
 	}
 
 	// Handle static pages - try both flat .html format and subdirectory/index.html format
-	// Next.js generates flat files like /artists.html, /settings.html, /index.html
 	flatPath := "dist/.next/server/app/" + cleanPath + ".html"
 	subPath := "dist/.next/server/app/" + cleanPath + "/index.html"
 
-	// Try flat .html first, then subdirectory format
 	if _, err := distFS.Open(flatPath); err == nil {
 		return flatPath
 	}
@@ -200,3 +186,6 @@ func setContentType(w http.ResponseWriter, filePath string) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 }
+
+// keep json import used
+var _ = json.Marshal
