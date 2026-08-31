@@ -23,3 +23,7 @@ coverage.html
 # Node (in case anyone runs npm in here)
 node_modules
 .next
+
+# Git
+.git
+.gitignore
