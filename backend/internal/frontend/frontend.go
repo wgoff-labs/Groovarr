@@ -13,7 +13,11 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// escapeForJSString escapes double quotes for JavaScript string context
+// escapeForJSString escapes a string for safe inclusion in a JS string literal.
+// It replaces " with \" (one backslash + one quote, 2 bytes total) so the result
+// can be safely embedded inside a "..." JS string literal. The next layer up
+// (the script tag containing this) is itself a JS string, so when the HTML is
+// parsed, \" is decoded back to a literal " in JS source.
 func escapeForJSString(s string) string {
 	return strings.ReplaceAll(s, "\"", "\\\"")
 }
@@ -112,63 +116,58 @@ func NewHandler() http.HandlerFunc {
 			// Wrap each segment around the current structure
 			for i := len(parts) - 1; i >= 0; i-- {
 				// Create: [segment_name, {"children": [current]}]
-				current = []any{parts[i], map[string]any{"children": []any{current}}}
+				current = []any{parts[i], map[string]any{"children": current}}
 			}
 			
 			// Wrap in the root structure: ["", {"children": [current]}, "$undefined", "$undefined", true]
-			initialTreeValue := []any{"", map[string]any{"children": []any{current}}, "$undefined", "$undefined", true}
-			initialTreeJSON, _ := json.Marshal(initialTreeValue)
-			initialTree := []byte(initialTreeJSON)
+					initialTreeValue := []any{"", map[string]any{"children": current}, "$undefined", "$undefined", true}
+					initialTreeJSON, _ := json.Marshal(initialTreeValue)
+					initialTree := []byte(initialTreeJSON)
 
-			// DEBUG: log what we're doing
-			log.Printf("[fallback] reqPath=%q cleanPath=%q urlParts=%s initialTree=%s", reqPath, cleanPath, string(urlPartsJSON), string(initialTree))
+					// The embedded HTML has JSON inside a JS string, so quotes are escaped as \" (one backslash + quote).
+					// In Go raw strings (backticks), backslashes are LITERAL, so we write \" to match \".
+		
+					urlPattern := `urlParts\":[\"\",\"\"],`
+					urlReplacement := `urlParts\":` + string(urlPartsJSON) + `,`
 
-			// The embedded HTML has JSON inside a JS string, so quotes are escaped as \\\" (two backslashes + quote).
-			// In Go raw strings (backticks), backslashes are LITERAL, so we write \\\\\" to match \\\".
-			
-			// urlParts replacement - pattern: urlParts\\\":[\\\"\\\",\\\"\\\"] (two backslashes per quote)
-			urlPattern := `urlParts\\\":[\\\"\\\",\\\"\\\"]`
-			urlReplacement := `"urlParts":` + escapeForJSString(string(urlPartsJSON))
-			html = strings.Replace(html, urlPattern, urlReplacement, 1)
+					if strings.Contains(html, urlPattern) {
+						html = strings.Replace(html, urlPattern, urlReplacement, 1)
+						log.Printf("[fallback] urlParts replacement SUCCESS")
+					} else {
+						log.Printf("[fallback] urlParts replacement FAILED - expected: %q", urlReplacement)
+					}
 
-			// initialTree replacement - match the exact original pattern in index.html
-			// Pattern: initialTree\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{}]},\\\"$undefined\\\",\\\"$undefined\\\",true]
-			treePattern := `initialTree\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{}]},\\\"$undefined\\\",\\\"$undefined\\\",true]`
-			treeReplacement := `"initialTree":` + escapeForJSString(string(initialTree))
-			html = strings.Replace(html, treePattern, treeReplacement, 1)
+					// initialTree replacement - match the exact original pattern in index.html
+					// Pattern: initialTree\":["",{"children":[["__PAGE__",{}]},"$undefined","$undefined",true]
+					treePattern := `initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],`
+					treeReplacement := `initialTree\":` + strings.ReplaceAll(string(initialTree), `"`, `\"`) + `,`
 
-			// initialSeedData replacement
-			// Pattern: initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},
-			seedPattern := `initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},`
-			seedReplacement := `"initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},null,null],`
-			html = strings.Replace(html, seedPattern, seedReplacement, 1)
+					if strings.Contains(html, treePattern) {
+						html = strings.Replace(html, treePattern, treeReplacement, 1)
+						log.Printf("[fallback] initialTree replacement SUCCESS")
+					} else {
+						log.Printf("[fallback] initialTree replacement FAILED - expected: %q", treeReplacement)
+					}
 
-			// DEBUG: verify replacements happened
-			urlExpected := `"urlParts":` + escapeForJSString(string(urlPartsJSON))
-			if strings.Contains(html, urlExpected) {
-				log.Printf("[fallback] urlParts replacement SUCCESS")
-			} else {
-				log.Printf("[fallback] urlParts replacement FAILED - expected: %q", urlExpected)
-			}
-			treeExpected := `"initialTree":` + escapeForJSString(string(initialTree))
-			if strings.Contains(html, treeExpected) {
-				log.Printf("[fallback] initialTree replacement SUCCESS")
-			} else {
-				log.Printf("[fallback] initialTree replacement FAILED - expected: %q", treeExpected)
-			}
-			if !strings.Contains(html, seedPattern) {
-				log.Printf("[fallback] initialSeedData replacement SUCCESS (pattern no longer found in html)")
-			} else {
-				log.Printf("[fallback] initialSeedData replacement FAILED - pattern still in html")
-			}
+					// initialSeedData replacement
+					// Pattern: initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null]
+					seedPattern := `initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null],`
+					seedReplacement := `initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null],`
 
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.Write([]byte(html))
-			return
-		}
+					if strings.Contains(html, seedPattern) {
+						html = strings.Replace(html, seedPattern, seedReplacement, 1)
+						log.Printf("[fallback] initialSeedData replacement SUCCESS (pattern no longer found in html)")
+					} else {
+						log.Printf("[fallback] initialSeedData replacement FAILED - pattern still in html")
+					}
+		
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+					w.Header().Set("Pragma", "no-cache")
+					w.Header().Set("Expires", "0")
+					w.Write([]byte(html))
+					return
+				}
 
 		http.NotFound(w, r)
 	}
