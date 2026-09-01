@@ -30,45 +30,21 @@ COPY . .
 #   1. GIT_COMMIT build arg (passed by user locally)
 #   2. VERSION build arg (Warren sets this to the commit hash before pushing)
 #   3. version.txt in the build context (git commit hash)
-#   4. .git/HEAD fallback
-#   5. "dev" as last resort
-RUN echo "[DEBUG] .dockerignore contents:" && cat /.dockerignore 2>/dev/null || echo "(empty or not found)" && \
-    echo "[DEBUG] Build context root ls:" && ls -la /build/ 2>/dev/null | head -5; \
+#   4. "dev" as last resort
+# Note: .git/HEAD is excluded from Portainer build context, so no .git/ fallback
+RUN echo "=== Groovarr Build ===" && \
     GIT_COMMIT_VAL=dev; \
     if [ -n "${GIT_COMMIT}" ]; then \
       GIT_COMMIT_VAL="${GIT_COMMIT}"; \
-      echo "[DEBUG] Using GIT_COMMIT build arg: $GIT_COMMIT_VAL"; \
+      echo "Using GIT_COMMIT build arg: $GIT_COMMIT_VAL"; \
     elif [ -n "${VERSION}" ]; then \
       GIT_COMMIT_VAL="${VERSION}"; \
-      echo "[DEBUG] Using VERSION build arg: $GIT_COMMIT_VAL"; \
+      echo "Using VERSION build arg: $GIT_COMMIT_VAL"; \
     elif [ -f /build/version.txt ]; then \
       GIT_COMMIT_VAL=$(cat /build/version.txt | tr -d ' \n'); \
-      echo "[DEBUG] Read GIT_COMMIT=$GIT_COMMIT_VAL from /build/version.txt"; \
-    elif [ -f .git/HEAD ]; then \
-      echo "[DEBUG] .git/HEAD found, contents: $(cat .git/HEAD)"; \
-      ref=$(cat .git/HEAD | tr -d '\n'); \
-      case "$ref" in \
-        ref:*) \
-          branch=$(echo "$ref" | sed 's/^ref: *//'); \
-          echo "[DEBUG] Detected branch ref: $branch"; \
-          if [ -f ".git/$branch" ]; then \
-            GIT_COMMIT_VAL=$(cat ".git/$branch" | cut -c1-7); \
-            echo "[DEBUG] Read commit from .git/$branch: $GIT_COMMIT_VAL"; \
-          elif [ -f .git/HEAD ] && [ $(cat .git/HEAD | wc -l) -eq 1 ]; then \
-            GIT_COMMIT_VAL=$(cat .git/HEAD | head -c 7); \
-            echo "[DEBUG] Falling back to .git/HEAD content: $GIT_COMMIT_VAL"; \
-          else \
-            GIT_COMMIT_VAL=$(git rev-parse --short HEAD 2>/dev/null || echo dev); \
-            echo "[DEBUG] git rev-parse fallback: $GIT_COMMIT_VAL"; \
-          fi \
-          ;; \
-        *) \
-          GIT_COMMIT_VAL=$(echo "$ref" | head -c 7); \
-          echo "[DEBUG] Detached HEAD: $GIT_COMMIT_VAL"; \
-          ;; \
-      esac; \
+      echo "Read GIT_COMMIT=$GIT_COMMIT_VAL from /build/version.txt"; \
     else \
-      echo "[DEBUG] version.txt and .git/HEAD not found, using dev"; \
+      echo "version.txt not found, using dev"; \
     fi; \
     BUILD_NUM=$(cat /build/build.txt 2>/dev/null | tr -d ' \n' || echo "0"); \
     echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL BUILD_NUM=$BUILD_NUM" && \
