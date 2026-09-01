@@ -14,6 +14,11 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
+// escapeForJSString escapes double quotes for JavaScript string context
+func escapeForJSString(s string) string {
+	return strings.ReplaceAll(s, "\"", "\\\"")
+}
+
 // NewHandler returns an HTTP handler that serves the Next.js static frontend
 func NewHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -80,77 +85,91 @@ func NewHandler() http.HandlerFunc {
 		}
 
 		// SPA Fallback: serve index.html with rewritten urlParts and initialTree for the actual URL.
-				// This allows the Next.js client-side router to render the correct page for dynamic routes.
-				content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
-				if err == nil {
-					html := string(content)
+		// This allows the Next.js client-side router to render the correct page for dynamic routes.
+		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
+		if err == nil {
+			html := string(content)
 
-					// Build the correct urlParts JSON array from the request path.
-					// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
-					cleanPath := strings.TrimPrefix(reqPath, "/")
-					urlParts := []string{""}
-					if cleanPath != "" {
-						urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
-					}
-					urlPartsJSON, _ := json.Marshal(urlParts)
+			// Build the correct urlParts JSON array from the request path.
+			// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
+			cleanPath := strings.TrimPrefix(reqPath, "/")
+			urlParts := []string{""}
+			if cleanPath != "" {
+				urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
+			}
+			urlPartsJSON, _ := json.Marshal(urlParts)
 
-					// Build the correct initialTree as a nested structure.
-					// For /artists/1/manage:
-					//   [["",{"children":[["artists",{"children":[["1",{"children":[["manage",{"children":[["__PAGE__",{}]]}]]}]]}]]}]]]
-					// Build initialTree matching Next.js RSC tuple format:
-			//   ["",{"children":[seg1,{"children":[seg2,...,{"children":["__PAGE__",{}]}]}]},"$undefined","$undefined",true]
-			// Use clean unescaped JSON matching urlPartsJSON behavior
+			// Build the correct initialTree matching Next.js format:
+			// ["", {"children": [[segment1, {"children": [[segment2, ... [["__PAGE__", {}] ... ]]]}]}], "$undefined", "$undefined", true]
 			parts := []string{}
 			if cleanPath != "" {
 				parts = strings.Split(cleanPath, "/")
 			}
-			current := `{"children":["__PAGE__",{}]}`
+			
+			// Build from innermost to outermost
+			// Start with the leaf: ["__PAGE__", {}]
+			current := []any{"__PAGE__", map[string]any{}}
+			
+			// Wrap each segment around the current structure
 			for i := len(parts) - 1; i >= 0; i-- {
-				current = fmt.Sprintf(`{"children":["%s",%s]}`, parts[i], current)
+				// Create: [segment_name, {"children": [current]}]
+				current = []any{parts[i], map[string]any{"children": []any{current}}}
 			}
-			initialTreeValue := fmt.Sprintf(`["",%s,"$undefined","$undefined",true]`, current)
-			initialTree := []byte(initialTreeValue)
+			
+			// Wrap in the root structure: ["", {"children": [current]}, "$undefined", "$undefined", true]
+			initialTreeValue := []any{"", map[string]any{"children": []any{current}}, "$undefined", "$undefined", true}
+			initialTreeJSON, _ := json.Marshal(initialTreeValue)
+			initialTree := []byte(initialTreeJSON)
 
-					// DEBUG: log what we're doing
-					log.Printf("[fallback] reqPath=%q cleanPath=%q urlParts=%s initialTree=%s", reqPath, cleanPath, string(urlPartsJSON), string(initialTree))
+			// DEBUG: log what we're doing
+			log.Printf("[fallback] reqPath=%q cleanPath=%q urlParts=%s initialTree=%s", reqPath, cleanPath, string(urlPartsJSON), string(initialTree))
 
-					// Replace the urlParts and initialTree in the __next_f.push[0] block.
-								// Replace the urlParts and initialTree in the __next_f.push[0] block.
-			// Patterns in Go raw strings (backticks) - backslashes are literal, NOT escape characters:
-			urlPattern := `urlParts\":[\"\",\"\"]`
-			urlReplacement := `"urlParts":` + string(urlPartsJSON)
+			// The embedded HTML has JSON inside a JS string, so quotes are escaped as \\\" (two backslashes + quote).
+			// In Go raw strings (backticks), backslashes are LITERAL, so we write \\\\\" to match \\\".
+			
+			// urlParts replacement - pattern: urlParts\\\":[\\\"\\\",\\\"\\\"] (two backslashes per quote)
+			urlPattern := `urlParts\\\":[\\\"\\\",\\\"\\\"]`
+			urlReplacement := `"urlParts":` + escapeForJSString(string(urlPartsJSON))
 			html = strings.Replace(html, urlPattern, urlReplacement, 1)
 
-			treePattern := `initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true]`
-			treeReplacement := `"initialTree":` + string(initialTree)
+			// initialTree replacement - match the exact original pattern in index.html
+			// Pattern: initialTree\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{}]},\\\"$undefined\\\",\\\"$undefined\\\",true]
+			treePattern := `initialTree\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{}]},\\\"$undefined\\\",\\\"$undefined\\\",true]`
+			treeReplacement := `"initialTree":` + escapeForJSString(string(initialTree))
 			html = strings.Replace(html, treePattern, treeReplacement, 1)
 
-			// Also rewrite initialSeedData to match the route
-			seedPattern := `initialSeedData\":[\"\",{\"children\":[\"__PAGE__\",{},`
-			seedReplacement := `"initialSeedData":["",{"children":["__PAGE__",{},null,null],`
+			// initialSeedData replacement
+			// Pattern: initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},
+			seedPattern := `initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},`
+			seedReplacement := `"initialSeedData\\\":[\\\"\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{},null,null],`
 			html = strings.Replace(html, seedPattern, seedReplacement, 1)
 
 			// DEBUG: verify replacements happened
-			urlExpected := `"urlParts":` + string(urlPartsJSON)
+			urlExpected := `"urlParts":` + escapeForJSString(string(urlPartsJSON))
 			if strings.Contains(html, urlExpected) {
 				log.Printf("[fallback] urlParts replacement SUCCESS")
 			} else {
 				log.Printf("[fallback] urlParts replacement FAILED - expected: %q", urlExpected)
 			}
-			treeExpected := `"initialTree":` + string(initialTree)
+			treeExpected := `"initialTree":` + escapeForJSString(string(initialTree))
 			if strings.Contains(html, treeExpected) {
 				log.Printf("[fallback] initialTree replacement SUCCESS")
 			} else {
 				log.Printf("[fallback] initialTree replacement FAILED - expected: %q", treeExpected)
 			}
+			if !strings.Contains(html, seedPattern) {
+				log.Printf("[fallback] initialSeedData replacement SUCCESS (pattern no longer found in html)")
+			} else {
+				log.Printf("[fallback] initialSeedData replacement FAILED - pattern still in html")
+			}
 
-					w.Header().Set("Content-Type", "text/html; charset=utf-8")
-					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-					w.Header().Set("Pragma", "no-cache")
-					w.Header().Set("Expires", "0")
-					w.Write([]byte(html))
-					return
-				}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			w.Write([]byte(html))
+			return
+		}
 
 		http.NotFound(w, r)
 	}
