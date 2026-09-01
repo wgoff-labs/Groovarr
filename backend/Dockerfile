@@ -32,7 +32,8 @@ COPY . .
 #   3. version.txt in the build context (git commit hash)
 #   4. "dev" as last resort
 # Note: .git/HEAD is excluded from Portainer build context, so no .git/ fallback
-RUN echo "=== Groovarr Build ===" && \
+RUN set -e; \
+    echo "=== Groovarr Build ==="; \
     GIT_COMMIT_VAL=dev; \
     if [ -n "${GIT_COMMIT}" ]; then \
       GIT_COMMIT_VAL="${GIT_COMMIT}"; \
@@ -47,10 +48,14 @@ RUN echo "=== Groovarr Build ===" && \
       echo "version.txt not found, using dev"; \
     fi; \
     BUILD_NUM=$(cat /build/build.txt 2>/dev/null | tr -d ' \n' || echo "0"); \
-    echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL BUILD_NUM=$BUILD_NUM" && \
+    echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL BUILD_NUM=$BUILD_NUM"; \
+    set -x; \
     CGO_ENABLED=1 GOOS=linux go build \
         -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT_VAL -X main.BuildNumber=$BUILD_NUM -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        -o groovarr-backend .
+        -o groovarr-backend . || { \
+        echo "BUILD FAILED - go build output above"; \
+        exit 1; \
+    }
 
 # --- Runtime stage ---
 FROM alpine:3.20
