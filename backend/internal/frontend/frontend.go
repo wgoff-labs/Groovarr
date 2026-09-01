@@ -3,7 +3,9 @@ package frontend
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -78,55 +80,77 @@ func NewHandler() http.HandlerFunc {
 		}
 
 		// SPA Fallback: serve index.html with rewritten urlParts and initialTree for the actual URL.
-		// This allows the Next.js client-side router to render the correct page for dynamic routes.
-		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
-		if err == nil {
-			html := string(content)
+				// This allows the Next.js client-side router to render the correct page for dynamic routes.
+				content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
+				if err == nil {
+					html := string(content)
 
-			// Build the correct urlParts JSON array from the request path.
-			// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
-			cleanPath := strings.TrimPrefix(reqPath, "/")
-			urlParts := []string{""}
-			if cleanPath != "" {
-				urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
-			}
-			urlPartsJSON, _ := json.Marshal(urlParts)
+					// Build the correct urlParts JSON array from the request path.
+					// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
+					cleanPath := strings.TrimPrefix(reqPath, "/")
+					urlParts := []string{""}
+					if cleanPath != "" {
+						urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
+					}
+					urlPartsJSON, _ := json.Marshal(urlParts)
 
-			// Build the correct initialTree as a nested structure.
-			// For /artists/1/manage:
-			//   [["",{"children":[["artists",{"children":[["1",{"children":[["manage",{"children":[[\"__PAGE__\",{}]]}]]}]]}]]}]]
-			type TreeNode struct {
-				Key      string     `json:"key"`
-				Children []TreeNode `json:"children"`
-			}
-			// Build tree bottom-up. Leaf = ["__PAGE__", {}]
-			leaf := TreeNode{Key: "__PAGE__"}
-			// Wrap each path segment
-			current := leaf
-			// Reverse the path parts to wrap from the deepest up
+					// Build the correct initialTree as a nested structure.
+					// For /artists/1/manage:
+					//   [["",{"children":[["artists",{"children":[["1",{"children":[["manage",{"children":[["__PAGE__",{}]]}]]}]]}]]}]]]
+					// Build initialTree matching Next.js RSC tuple format:
+			//   ["",{"children":[seg1,{"children":[seg2,...,{"children":["__PAGE__",{}]}]}]},"$undefined","$undefined",true]
+			// Use clean unescaped JSON matching urlPartsJSON behavior
 			parts := []string{}
 			if cleanPath != "" {
 				parts = strings.Split(cleanPath, "/")
 			}
-			// Build from innermost outward: for parts ["artists","1","manage"]
-			// innermost is "manage" (wraps __PAGE__), then "1" wraps that, etc.
+			current := `{"children":["__PAGE__",{}]}`
 			for i := len(parts) - 1; i >= 0; i-- {
-				current = TreeNode{Key: parts[i], Children: []TreeNode{current}}
+				current = fmt.Sprintf(`{"children":["%s",%s]}`, parts[i], current)
 			}
-			root := TreeNode{Key: "", Children: []TreeNode{current}}
-			initialTree, _ := json.Marshal([]TreeNode{root})
+			initialTreeValue := fmt.Sprintf(`["",%s,"$undefined","$undefined",true]`, current)
+			initialTree := []byte(initialTreeValue)
 
-			// Replace the urlParts and initialTree in the __next_f.push[0] block.
-			html = strings.Replace(html, `\"urlParts\":[\"\",\"\"]`, `"urlParts":`+string(urlPartsJSON), 1)
-			html = strings.Replace(html, `\"initialTree\":[\"\",{"children":[\"__PAGE__\",{}]}]`, `"initialTree":`+string(initialTree), 1)
+					// DEBUG: log what we're doing
+					log.Printf("[fallback] reqPath=%q cleanPath=%q urlParts=%s initialTree=%s", reqPath, cleanPath, string(urlPartsJSON), string(initialTree))
 
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.Write([]byte(html))
-			return
-		}
+					// Replace the urlParts and initialTree in the __next_f.push[0] block.
+								// Replace the urlParts and initialTree in the __next_f.push[0] block.
+			// Patterns in Go raw strings (backticks) - backslashes are literal, NOT escape characters:
+			urlPattern := `urlParts\":[\"\",\"\"]`
+			urlReplacement := `"urlParts":` + string(urlPartsJSON)
+			html = strings.Replace(html, urlPattern, urlReplacement, 1)
+
+			treePattern := `initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true]`
+			treeReplacement := `"initialTree":` + string(initialTree)
+			html = strings.Replace(html, treePattern, treeReplacement, 1)
+
+			// Also rewrite initialSeedData to match the route
+			seedPattern := `initialSeedData\":[\"\",{\"children\":[\"__PAGE__\",{},`
+			seedReplacement := `"initialSeedData":["",{"children":["__PAGE__",{},null,null],`
+			html = strings.Replace(html, seedPattern, seedReplacement, 1)
+
+			// DEBUG: verify replacements happened
+			urlExpected := `"urlParts":` + string(urlPartsJSON)
+			if strings.Contains(html, urlExpected) {
+				log.Printf("[fallback] urlParts replacement SUCCESS")
+			} else {
+				log.Printf("[fallback] urlParts replacement FAILED - expected: %q", urlExpected)
+			}
+			treeExpected := `"initialTree":` + string(initialTree)
+			if strings.Contains(html, treeExpected) {
+				log.Printf("[fallback] initialTree replacement SUCCESS")
+			} else {
+				log.Printf("[fallback] initialTree replacement FAILED - expected: %q", treeExpected)
+			}
+
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+					w.Header().Set("Pragma", "no-cache")
+					w.Header().Set("Expires", "0")
+					w.Write([]byte(html))
+					return
+				}
 
 		http.NotFound(w, r)
 	}
