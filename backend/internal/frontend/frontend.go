@@ -3,7 +3,7 @@ package frontend
 import (
 	"embed"
 	"encoding/json"
-	"io"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"fmt"
 )
 
 //go:embed all:dist
@@ -137,30 +136,27 @@ func startNodeProxy() (*httputil.ReverseProxy, error) {
 
 	// Wait for the process to be ready by attempting to connect.
 	// We'll do a simple retry mechanism.
-	var proxyURL *url.URL
-	for i := 0; i < 10; i++ {
-		proxyURL, err = url.Parse("http://localhost:3001")
-		if err != nil {
-			os.RemoveAll(tmpDir)
-			cmd.Process.Kill()
-			return nil, err
-		}
-		proxy := httputil.NewSingleHostReverseProxy(proxyURL)
-		// Try a simple GET to / to see if the server is up.
+	proxyURL, err := url.Parse("http://localhost:3001")
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		cmd.Process.Kill()
+		return nil, err
+	}
+	for i := 0; i < 50; i++ {
 		resp, err := http.DefaultClient.Get("http://localhost:3001/")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
-			// Success.
 			break
 		}
-		// Wait a bit before retrying.
-		time.Sleep(100 * time.Millisecond)
-		if i == 9 {
-			// Failed after retries.
+		if resp != nil {
+			resp.Body.Close()
+		}
+		if i == 49 {
 			os.RemoveAll(tmpDir)
 			cmd.Process.Kill()
 			return nil, fmt.Errorf("Node.js server did not become ready")
 		}
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Create the reverse proxy.
@@ -193,13 +189,12 @@ func startNodeProxy() (*httputil.ReverseProxy, error) {
 }
 
 // copyEmbeddedDir copies a directory from the embedded filesystem to a physical directory.
-func copyEmbeddedDir(fs embed.FS, src string, dst string) error {
-	// Walk the embedded directory.
-	return fs.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+func copyEmbeddedDir(emb embed.FS, src string, dst string) error {
+	return fs.WalkDir(emb, src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(src, path)
+		rel, err := filepath.Rel(src, p)
 		if err != nil {
 			return err
 		}
@@ -210,7 +205,7 @@ func copyEmbeddedDir(fs embed.FS, src string, dst string) error {
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0o755)
 		}
-		data, err := fs.ReadFile(path)
+		data, err := emb.ReadFile(p)
 		if err != nil {
 			return err
 		}
