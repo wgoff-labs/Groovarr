@@ -10,6 +10,7 @@ export default function DashboardPage() {
   const [pruneResult, setPruneResult] = useState<PruneResult[] | null>(null);
   const [checkLoading, setCheckLoading] = useState(false);
   const [pruneLoading, setPruneLoading] = useState(false);
+  const [checkStatus, setCheckStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [hitFallen, setHitFallen] = useState<HitFallenEntry[] | null>(null);
   const [hitFallenOpen, setHitFallenOpen] = useState(false);
@@ -23,6 +24,7 @@ export default function DashboardPage() {
       setCheckResult(null);
       setPruneResult(null);
       setError(null);
+      setCheckStatus('');
     } catch (e: any) {
       setError(`Cannot reach Groovarr backend: ${e.message}`);
       setArtists([]); // Ensure artists is never null
@@ -46,12 +48,29 @@ export default function DashboardPage() {
 
   const runCheck = async () => {
     setCheckLoading(true);
+    setCheckStatus('Starting daily check...');
+    setError(null);
+    const startedAt = Date.now();
     try {
       const results = await api.check();
-      setCheckResult(Array.isArray(results) ? results : []);
+      const arr = Array.isArray(results) ? results : [];
+      setCheckResult(arr);
+      // Build a human-readable summary line
+      const totalArtists = arr.length;
+      const totalAdded = arr.reduce((s, r) => s + (r.albums_added || 0), 0);
+      const totalHits = arr.reduce((s, r) => s + (r.hits_kept || 0), 0);
+      const totalErrors = arr.reduce((s, r) => s + ((r.errors || []).length), 0);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      setCheckStatus(
+        `Done in ${elapsed}s • ${totalArtists} artist${totalArtists !== 1 ? 's' : ''} • ` +
+        `${totalAdded} album${totalAdded !== 1 ? 's' : ''} added • ` +
+        `${totalHits} hit${totalHits !== 1 ? 's' : ''} kept` +
+        (totalErrors > 0 ? ` • ${totalErrors} error${totalErrors !== 1 ? 's' : ''}` : '')
+      );
     } catch (e: any) {
       setError(`Check failed: ${e.message}`);
       setCheckResult([]);
+      setCheckStatus(`Failed after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
     }
     setCheckLoading(false);
   };
@@ -96,8 +115,8 @@ export default function DashboardPage() {
 
       {/* Actions */}
       <div className="flex gap-3 flex-wrap">
-        <button onClick={runCheck} disabled={checkLoading} className="btn-primary">
-          {checkLoading ? '⏳ Checking...' : '🔍 Run Daily Check'}
+        <button onClick={runCheck} disabled={checkLoading} className="btn-primary min-w-0 flex-1 sm:flex-none">
+          {checkLoading ? `⏳ ${checkStatus || 'Checking...'}` : '🔍 Run Daily Check'}
         </button>
         <button onClick={runPrune} disabled={pruneLoading} className="btn-ghost">
           {pruneLoading ? '⏳ Pruning...' : '✂️ Run Prune'}
@@ -109,6 +128,37 @@ export default function DashboardPage() {
           {hitFallenOpen ? '🔼 Hide Fallen' : '📉 Show Fallen Hits'}
         </button>
       </div>
+
+      {/* Live check status (visible while running and for 8s after completion) */}
+      {checkStatus && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm flex items-center gap-2 ${
+            checkLoading
+              ? 'border-emerald-600/40 bg-emerald-900/20 text-emerald-300'
+              : error
+              ? 'border-red-700 bg-red-900/20 text-red-300'
+              : 'border-gray-700 bg-gray-800/50 text-gray-300'
+          }`}
+        >
+          {checkLoading ? (
+            <span className="inline-block h-3 w-3 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+          ) : error ? (
+            <span>❌</span>
+          ) : (
+            <span>✅</span>
+          )}
+          <span className="font-mono text-xs sm:text-sm flex-1">{checkStatus}</span>
+          {!checkLoading && (
+            <button
+              onClick={() => setCheckStatus('')}
+              className="text-gray-500 hover:text-white text-xs"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Hit-fallen review widget */}
       {hitFallenOpen && hitFallen !== null && (
@@ -177,13 +227,13 @@ export default function DashboardPage() {
               {checkResult.map((r) => (
                 <div key={r.artist_name} className="border-b border-gray-700 pb-3 last:border-0">
                   <p className="font-medium text-white">{r.artist_name}</p>
-                  {r.errors.map((e, i) => (
+              {(r.errors ?? []).map((e, i) => (
                     <p key={i} className="text-red-400 text-sm">❌ {e}</p>
                   ))}
-                  {r.added_albums.map((a) => (
+                  {(r.added_albums ?? []).map((a) => (
                     <p key={a} className="text-emerald-400 text-sm">✅ {a}</p>
                   ))}
-                  {r.albums_added === 0 && r.errors.length === 0 && (
+                  {r.albums_added === 0 && (r.errors ?? []).length === 0 && (
                     <p className="text-gray-400 text-sm">No new popular releases</p>
                   )}
                 </div>
