@@ -91,8 +91,13 @@ func Load() *Config {
 
 // loadFromDB refreshes dynamic settings from the database into the global config.
 // Assumes the global config has already been initialised. Safe to call repeatedly.
+// If the store has not been initialised yet (early startup), this is a no-op so we
+// don't crash on a nil *sql.DB.
 func loadFromDB() {
 	if global == nil {
+		return
+	}
+	if store.GetDB() == nil {
 		return
 	}
 
