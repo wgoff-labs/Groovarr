@@ -92,7 +92,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 					TrackNumber:   track.TrackNumber,
 					Downloaded:    track.HasFile,
 					CurrentScore:  currentScore,
-					TrackState:    trackState,
+					State:         trackState,
 				})
 			}
 		}
@@ -143,7 +143,7 @@ type MonitoredTrackResponse struct {
 	TrackNumber   int     `json:"trackNumber"`
 	Downloaded    bool    `json:"downloaded"`
 	CurrentScore  *int    `json:"currentScore,omitempty"`
-	TrackState    *string `json:"trackState,omitempty"`
+	State        *string `json:"state,omitempty"`
 }
 
 // hasPrefix and hasSuffix are simple helper functions.
