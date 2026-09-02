@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run this BEFORE `docker compose build` to:
 #   1. Build the Next.js frontend
-#   2. Copy the standalone output into the Go embed path
+#   2. Copy the standalone + static assets into the Go embed path
 #   3. Update .env with the current commit hash
 set -e
 
@@ -18,12 +18,21 @@ npm ci
 npm run build
 cd ..
 
-FRONTEND_DIST="frontend/.next/standalone"
-BACKEND_EMBED="backend/internal/frontend/dist"
+STANDALONE="frontend/.next/standalone"
+STATIC="frontend/.next/static"
+SERVER="frontend/.next/server"
+EMBED="backend/internal/frontend/dist"
 
 echo "=== Copying frontend to Go embed path ==="
-rm -rf "$BACKEND_EMBED"
-cp -r "$FRONTEND_DIST" "$BACKEND_EMBED"
+rm -rf "$EMBED"
+mkdir -p "$EMBED"
+
+# Copy standalone (server.js, node_modules, .next/server for SSR)
+cp -r "$STANDALONE"/* "$EMBED/"
+
+# Copy .next/static (client chunks, CSS) — standalone doesn't include these
+mkdir -p "$EMBED/.next/static"
+cp -r "$STATIC"/* "$EMBED/.next/static/"
 
 echo "=== Updating .env ==="
 if grep -q "^GIT_COMMIT=" .env 2>/dev/null; then

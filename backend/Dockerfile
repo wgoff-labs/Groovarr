@@ -35,9 +35,12 @@ RUN go mod download
 # subsequent layers including COPY . .) invalidate when CACHE_BUST changes.
 RUN echo "CACHE_BUST=$CACHE_BUST" >> /tmp/.build-marker
 
-# Copy the backend source plus the freshly built frontend dist (so `//go:embed all:dist` picks it up)
+# Copy the backend source plus the freshly built frontend dist (so `//go:embed all:dist` picks it up).
+# We copy the standalone output (server.js, node_modules, .next/server for SSR) and
+# also the static directory (client chunks, CSS — standalone doesn't include these).
 COPY backend/ ./
-COPY --from=frontend-builder /build/.next/standalone ./internal/frontend/dist
+COPY --from=frontend-builder --chown=root:root /build/.next/standalone/. ./internal/frontend/dist/
+COPY --from=frontend-builder --chown=root:root /build/.next/static ./internal/frontend/dist/.next/static
 
 # Resolve GIT_COMMIT (in priority order):
 #   1. GIT_COMMIT build arg (passed by user locally)

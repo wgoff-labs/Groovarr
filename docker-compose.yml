@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       args:
-        CACHE_BUST: "7"
+        CACHE_BUST: "8"
     container_name: groovarr
     restart: unless-stopped
     ports:
