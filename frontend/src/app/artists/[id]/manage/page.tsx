@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { api, TrackState, ManagedAlbum, ManagedTrack } from '@/lib/api';
+import { api, TrackState, ManagedAlbum, ManagedTrack, ApiError } from '@/lib/api';
 
 const STATE_LABELS: Record<TrackState | 'auto', string> = {
   '': 'Auto',
@@ -43,6 +43,7 @@ export default function ArtistManagePage() {
   const [tracks, setTracks] = useState<ManagedTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lidarrError, setLidarrError] = useState(false); // true when error is a Lidarr connection issue
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<'' | 'unset' | TrackState>('');
@@ -131,13 +132,22 @@ export default function ArtistManagePage() {
   const loadManage = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setLidarrError(false);
     try {
       const data = await api.artists.manage(artistId);
       setArtist(data.artist);
       setAlbums(Array.isArray(data.albums) ? data.albums : []);
       setTracks(Array.isArray(data.tracks) ? data.tracks : []);
     } catch (e: any) {
-      setError(`Failed to load: ${e.message}`);
+      // Structured Lidarr error takes priority — gives a friendlier message
+      // and lets us offer a "Go to Settings" link in the error UI.
+      if (e instanceof ApiError && e.lidarr) {
+        setError(e.lidarr.error);
+        setLidarrError(true);
+      } else {
+        setError(`Failed to load: ${e.message}`);
+        setLidarrError(false);
+      }
       setArtist(null);
       setAlbums([]);
       setTracks([]);
@@ -151,7 +161,7 @@ export default function ArtistManagePage() {
 
   const setTrackState = async (track: ManagedTrack, newState: TrackState) => {
     try {
-      await api.tracks.setState(track.lidarrId > 0 ? artistId : artistId, track.lidarrId, newState);
+      await api.tracks.setState(artistId, track.lidarrId, newState);
       setTracks((prev) =>
         prev.map((t) => (t.lidarrId === track.lidarrId ? { ...t, state: newState } : t))
       );
@@ -267,6 +277,14 @@ export default function ArtistManagePage() {
       <div className="space-y-4">
         <div className="rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-red-400">
           {error}
+          {lidarrError && (
+            <div className="mt-2">
+              <Link href="/settings" className="text-sm text-blue-400 hover:text-blue-300 underline">
+                → Go to Settings
+              </Link>
+              <span className="text-gray-500 text-xs ml-2">(connect Lidarr, then reload)</span>
+            </div>
+          )}
         </div>
         <Link href="/artists" className="btn-secondary">
           ← Back to Artists

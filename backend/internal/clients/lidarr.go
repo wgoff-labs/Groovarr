@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,20 +35,41 @@ type LidarrArtist struct {
 }
 
 type LidarrAlbum struct {
-	ID        int64  `json:"id"`
-	Title     string `json:"title"`
-	Monitored bool   `json:"monitored"`
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Monitored   bool   `json:"monitored"`
+	ReleaseDate string `json:"releaseDate"` // ISO date "2024-03-15"; empty if unknown
+}
+
+// ReleaseYear extracts the 4-digit year from a Lidarr album's ReleaseDate.
+// Returns 0 if the field is empty or unparseable. Used by the manage API to
+// populate the Year column so the frontend can sort/display it.
+func (a LidarrAlbum) ReleaseYear() int {
+	d := strings.TrimSpace(a.ReleaseDate)
+	if len(d) < 4 {
+		return 0
+	}
+	yearStr := d[:4]
+	n, err := strconv.Atoi(yearStr)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 type LidarrTrack struct {
-	ID                 int64  `json:"id"`
-	Title              string `json:"title"`
-	Monitored          bool   `json:"monitored"`
-	HasFile            bool   `json:"hasFile"`
-	TrackFileID        int64  `json:"trackFileId"`
-	AlbumID            int64  `json:"albumId"`
-	TrackNumber        int    `json:"trackNumber"`
-	AbsoluteTrackNumber int   `json:"absoluteTrackNumber"`
+	ID                  int64  `json:"id"`
+	Title               string `json:"title"`
+	Monitored           bool   `json:"monitored"`
+	HasFile             bool   `json:"hasFile"`
+	TrackFileID         int64  `json:"trackFileId"`
+	AlbumID             int64  `json:"albumId"`
+	// TrackNumber is accept-any so Lidarr can return it as a number ("1") or string (1).
+	// Code should use TrackNumberInt(t) to get a safe int, falling back to array index.
+	TrackNumber         any    `json:"trackNumber"`
+	AbsoluteTrackNumber any    `json:"absoluteTrackNumber"`
+	DiscNumber          int    `json:"discNumber"` // multi-disc album support
+	Duration            int    `json:"duration"`   // seconds (from track file if available)
 }
 
 type LidarrRootFolder struct {
@@ -424,10 +446,42 @@ func (c *LidarrClient) MonitorAndSearchAlbum(id int64) error {
 
 // ── Tracks ────────────────────────────────────────────────────────────────
 
+// TrackNumberInt safely extracts a track number from a LidarrTrack. Lidarr
+// sometimes returns it as a JSON string ("1") and sometimes as a number (1).
+// When the field is missing or not a number, callers should fall back to the
+// track's position in the album's track list.
+func TrackNumberInt(t LidarrTrack) int {
+	switch v := t.TrackNumber.(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 func (c *LidarrClient) GetAlbumTracks(albumID int64) ([]LidarrTrack, error) {
 	var tracks []LidarrTrack
-	err := c.get(fmt.Sprintf("/track?albumId=%d", albumID), &tracks)
-	return tracks, err
+	if err := c.get(fmt.Sprintf("/track?albumId=%d", albumID), &tracks); err != nil {
+		return nil, err
+	}
+	// Stamp each track with its 1-based position in the album as a fallback
+	// track number. Lidarr's API has shipped trackNumber as both a number and
+	// a string across versions, and is sometimes blank entirely. The display
+	// order is the same as Lidarr's own list, so the index is a good fallback.
+	for i := range tracks {
+		pos := i + 1
+		if TrackNumberInt(tracks[i]) == 0 {
+			tracks[i].TrackNumber = pos
+		}
+	}
+	return tracks, nil
 }
 
 // UnmonitorTrack sets a track to unmonitored (conservative: keeps file on disk).

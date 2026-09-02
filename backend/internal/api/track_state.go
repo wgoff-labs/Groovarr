@@ -53,16 +53,24 @@ func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	// Validate state
-	if req.State != "keep" && req.State != "hit" && req.State != "not_keep" {
-		http.Error(w, "Invalid state. Must be 'keep', 'hit', or 'not_keep'", http.StatusBadRequest)
+	// Validate state — allow empty string to reset to auto (auto = no preference)
+	validStates := map[string]bool{"keep": true, "hit": true, "not_keep": true, "": true}
+	if !validStates[req.State] {
+		http.Error(w, "Invalid state. Must be 'keep', 'hit', 'not_keep', or empty (auto)", http.StatusBadRequest)
 		return
 	}
 
-	// Set track preference in store
-	if err := store.UpsertTrackPreference(artistID, lidarrTrackID, req.State, 0); err != nil {
-		http.Error(w, "Failed to set track preference", http.StatusInternalServerError)
-		return
+	// Reset to auto: delete the preference row entirely
+	if req.State == "" {
+		if err := store.DeleteTrackPreference(artistID, lidarrTrackID); err != nil {
+			http.Error(w, "Failed to clear track preference", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := store.UpsertTrackPreference(artistID, lidarrTrackID, req.State, 0); err != nil {
+			http.Error(w, "Failed to set track preference", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Return success

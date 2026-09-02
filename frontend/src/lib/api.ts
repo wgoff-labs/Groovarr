@@ -111,11 +111,11 @@ export interface ManagedTrack {
   albumTitle: string;
   albumLidarrId: number;
   trackNumber: number;
-  discNumber: number;
-  duration: number; // seconds
+  discNumber: number;   // from Lidarr; 0 if unset
+  duration: number;    // seconds from Lidarr; 0 if unset
   score: number | null; // popularity score 0-100
-  state: TrackState;
-  downloaded: boolean; // hasFile
+  state: TrackState;    // always a string: 'keep'|'hit'|'not_keep'|'' (empty=auto)
+  downloaded: boolean;  // hasFile
 }
 
 export interface ManageArtistResponse {
@@ -146,6 +146,30 @@ const BASE = typeof window !== 'undefined'
   ? ''  // Browser: use same origin (relative URLs)
   : (process.env.NEXT_PUBLIC_API_URL ?? 'http://10.0.0.203:8080');
 
+// LidarrError is the structured body returned by any handler that depends on
+// Lidarr when the connection is missing or in an error state (see
+// backend/internal/api/lidarr_errors.go). It is attached to thrown errors as
+// `err.lidarr` so pages can render a friendly message and link to Settings.
+export interface LidarrError {
+  error: string;
+  code: 'not_connected' | 'error' | 'connecting';
+  service: 'lidarr';
+  status: 'disconnected' | 'connecting' | 'connected' | 'error';
+  last_check: string;
+  detail?: string;
+}
+
+export class ApiError extends Error {
+  status: number;
+  lidarr?: LidarrError;
+  constructor(message: string, status: number, lidarr?: LidarrError) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.lidarr = lidarr;
+  }
+}
+
 async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
@@ -155,7 +179,18 @@ async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    const text = await res.text();
+    // Try to parse a structured Lidarr error and attach it to the thrown error
+    let lidarr: LidarrError | undefined;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && parsed.service === 'lidarr' && parsed.code) {
+        lidarr = parsed as LidarrError;
+      }
+    } catch {
+      // not JSON, leave lidarr undefined
+    }
+    throw new ApiError(`API error ${res.status}: ${text}`, res.status, lidarr);
   }
   return res.json() as Promise<T>;
 }

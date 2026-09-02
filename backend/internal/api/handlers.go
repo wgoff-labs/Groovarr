@@ -92,6 +92,9 @@ func FoldersHandler(w http.ResponseWriter, r *http.Request) {
 	cm := connections.New()
 	c, err := cm.GetLidarrClient()
 	if err != nil {
+		if WriteLidarrUnavailable(w, cm) {
+			return
+		}
 		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -109,6 +112,9 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 	cm := connections.New()
 	c, err := cm.GetLidarrClient()
 	if err != nil {
+		if WriteLidarrUnavailable(w, cm) {
+			return
+		}
 		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}

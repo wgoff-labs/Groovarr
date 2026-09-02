@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { api, TrackState, ManagedTrack } from '@/lib/api';
+import { api, TrackState, ManagedTrack, ApiError } from '@/lib/api';
 
 const STATE_LABELS: Record<TrackState, string> = {
   keep: 'Keep',
@@ -22,6 +22,7 @@ export default function AlbumManagePage() {
   const [tracks, setTracks] = useState<ManagedTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lidarrError, setLidarrError] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   type TrackSortKey = 'trackNumber' | 'title' | 'score' | 'downloaded' | 'state';
@@ -51,6 +52,7 @@ export default function AlbumManagePage() {
   const loadAlbum = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setLidarrError(false);
     try {
       const data = await api.artists.manage(artistId);
       setArtist(data.artist);
@@ -61,7 +63,13 @@ export default function AlbumManagePage() {
         setAlbumName(albumTracks[0].albumTitle);
       }
     } catch (e: any) {
-      setError(`Failed to load: ${e.message}`);
+      if (e instanceof ApiError && e.lidarr) {
+        setError(e.lidarr.error);
+        setLidarrError(true);
+      } else {
+        setError(`Failed to load: ${e.message}`);
+        setLidarrError(false);
+      }
       setArtist(null);
       setTracks([]);
     }
@@ -124,7 +132,17 @@ export default function AlbumManagePage() {
   if (error) {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-red-400">{error}</div>
+        <div className="rounded-lg bg-red-900/30 border border-red-700 px-4 py-3 text-red-400">
+          {error}
+          {lidarrError && (
+            <div className="mt-2">
+              <Link href="/settings" className="text-sm text-blue-400 hover:text-blue-300 underline">
+                → Go to Settings
+              </Link>
+              <span className="text-gray-500 text-xs ml-2">(connect Lidarr, then reload)</span>
+            </div>
+          )}
+        </div>
         <Link href="/artists" className="btn-secondary">← Back to Artists</Link>
       </div>
     );

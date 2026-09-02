@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/store"
@@ -43,7 +44,10 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 	// Get connection manager to access Lidarr client
 	mgr := connections.GetManager()
 	lidarrClient, err := mgr.GetLidarrClient()
-	if err != nil || lidarrClient == nil {
+	if err != nil {
+		if WriteLidarrUnavailable(w, mgr) {
+			return
+		}
 		http.Error(w, "Lidarr not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -68,6 +72,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		albumResponses = append(albumResponses, AlbumResponse{
 			LidarrAlbumID: album.ID,
 			Title:         album.Title,
+			Year:          album.ReleaseYear(),
 			Monitored:     album.Monitored,
 			TrackCount:    len(albumTracks),
 		})
@@ -80,16 +85,22 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		if downloadMode == "tracks" {
 			for _, track := range albumTracks {
 				var currentScore *int
-				var trackState *string
-				if s, ok := trackPrefs[track.ID]; ok && s != "" {
-					trackState = &s
+				// State is a plain string (empty = auto/no preference) so the
+				// frontend can compare it with === against 'keep'/'hit'/'not_keep'/''.
+				// A pointer here would serialize as either null or be omitted
+				// entirely, both of which break the React button-active comparisons.
+				trackState := ""
+				if s, ok := trackPrefs[track.ID]; ok {
+					trackState = s
 				}
 				allTracks = append(allTracks, MonitoredTrackResponse{
 					LidarrTrackID: track.ID,
 					Title:         track.Title,
 					AlbumTitle:    album.Title,
 					AlbumLidarrID: album.ID,
-					TrackNumber:   track.TrackNumber,
+					TrackNumber:   clients.TrackNumberInt(track),
+					DiscNumber:    track.DiscNumber,
+					Duration:      track.Duration,
 					Downloaded:    track.HasFile,
 					CurrentScore:  currentScore,
 					State:         trackState,
@@ -141,9 +152,12 @@ type MonitoredTrackResponse struct {
 	AlbumTitle    string  `json:"albumTitle"`
 	AlbumLidarrID int64   `json:"albumLidarrId"`
 	TrackNumber   int     `json:"trackNumber"`
+	DiscNumber    int     `json:"discNumber"`
+	Duration      int     `json:"duration"`
 	Downloaded    bool    `json:"downloaded"`
 	CurrentScore  *int    `json:"currentScore,omitempty"`
-	State        *string `json:"state,omitempty"`
+	// State is a plain string so it always serializes (empty = no preference set / auto).
+	State string `json:"state"`
 }
 
 // hasPrefix and hasSuffix are simple helper functions.
