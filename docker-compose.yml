@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        CACHE_BUST: "4"
+        CACHE_BUST: "5"
         # Set VERSION to the current commit hash when deploying.
         # Example: VERSION=abc1234 docker compose build
         # (Leave unset to fall back to version.txt or "dev")
