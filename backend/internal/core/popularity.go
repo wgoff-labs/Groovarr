@@ -74,35 +74,10 @@ func GetArtistTrackScores(artistID int64, artistName, deezerID string) TrackScor
 		}
 	}
 
-	// --- Deezer supplement (gap-filler) ---
-	if deezerID != "" {
-		deezer := clients.NewDeezerClient()
-		topTracks, err := deezer.GetArtistTopTracks(deezerID)
-		if err == nil && len(topTracks) > 0 {
-			maxRank := int64(0)
-			for _, t := range topTracks {
-				if t.Rank > maxRank {
-					maxRank = t.Rank
-				}
-			}
-			if maxRank == 0 {
-				maxRank = 1
-			}
-			for _, t := range topTracks {
-				score := int(float64(t.Rank) / float64(maxRank) * 100)
-				if score < 1 {
-					score = 1
-				}
-				name := normalizeTrack(t.Title)
-				if _, exists := scores.NameScores[name]; !exists {
-					scores.NameScores[name] = score
-					_ = store.UpsertTrackPopularity(artistID, 0, score, "deezer")
-				}
-				scores.DeezerIDScores[t.ID] = score
-			}
-			log.Printf("[popularity] Deezer supplemented %d tracks for '%s'", len(topTracks), artistName)
-		}
-	}
+		// Deezer supplement disabled (2026-09-02): Deezer rank is current popularity,
+		// not historical. Last.fm playcount is the only source for now.
+		// TODO: re-enable once a historical API (Spotify, Apple Music) is wired up.
+		// if deezerID != "" { ... }
 
 	return scores
 }

@@ -49,7 +49,6 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 	}
 
 	cfg := config.Load() // always reload so DB changes (settings API) take effect without restart
-	deezer := clients.NewDeezerClient()
 	lidarr, err := clients.NewLidarrClient()
 	if err != nil {
 		return nil, fmt.Errorf("lidarr: %w", err)
@@ -61,43 +60,7 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 		result := CheckResult{ArtistName: artist.Name}
 		log.Printf("Checking artist: %s", artist.Name)
 
-		// Resolve Deezer ID
-		deezerID := artist.DeezID
-		if deezerID == "" {
-			found, err := deezer.SearchArtist(artist.Name)
-			if err != nil || found == nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("Not found on Deezer: %v", err))
-				results = append(results, result)
-				continue
-			}
-			idStr := fmt.Sprintf("%d", found.ID)
-			deezerID = idStr
-			store.ArtistUpdateDeezerID(artist.Name, idStr)
-		}
-
-		// Fetch Last.fm popularity data (primary) before processing albums.
-		// Deezer supplements Last.fm gaps via deezerAlbum.TrackPopularities.
-		lastfmScores := GetArtistTrackScores(artist.ID, artist.Name, deezerID)
-		log.Printf("[check] %s | lastfm scores: %d unique tracks", artist.Name, len(lastfmScores.NameScores))
-
-		// Get releases
-		var albums []clients.AlbumInfo
-		var err error
-		if fullScan {
-			albums, err = deezer.GetTopAlbums(deezerID)
-		} else {
-			albums, err = deezer.GetNewReleases(deezerID, 90)
-		}
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("Music API error: %v", err))
-			results = append(results, result)
-			continue
-		}
-
-		popular := filterPopularAlbums(albums)
-		result.NewAlbumsFound = len(popular)
-
-		// Ensure artist in Lidarr
+		// Ensure artist exists in Lidarr first.
 		lidarrArtistID := artist.LidarrID
 		if lidarrArtistID == nil || *lidarrArtistID == 0 {
 			added, err := ensureLidarrArtist(artist, lidarr)
@@ -110,48 +73,71 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 			store.ArtistUpdateLidarrID(artist.Name, added.ID)
 		}
 
-		// Fetch Lidarr albums
-		var lidarrAlbums []clients.LidarrAlbum
-		if lidarrArtistID != nil {
-			lidarrAlbums, _ = lidarr.GetArtistAlbums(*lidarrArtistID)
-			if len(lidarrAlbums) == 0 {
-				log.Printf("No Lidarr albums for artist %s, waiting for refresh...", artist.Name)
-				waitForLidarrAlbums(lidarr, *lidarrArtistID, &lidarrAlbums)
-			}
+		// Fetch Lidarr albums (wait if Lidarr hasn't finished scanning yet).
+		lidarrAlbums, _ := lidarr.GetArtistAlbums(*lidarrArtistID)
+		if len(lidarrAlbums) == 0 {
+			log.Printf("No Lidarr albums for %s, waiting for scan...", artist.Name)
+			waitForLidarrAlbums(lidarr, *lidarrArtistID, &lidarrAlbums)
 		}
 
-		// 3-state model: Only run track-level processing if in "tracks" mode.
-		// In "album" mode, behavior remains: monitor + search the whole album.
+		// Fetch Last.fm popularity data (primary, only source).
+		lastfmScores := GetArtistTrackScores(artist.ID, artist.Name, "")
+		log.Printf("[check] %s | lastfm scores: %d unique tracks", artist.Name, len(lastfmScores.NameScores))
+
+		// Determine download mode.
 		downloadMode := cfg.DownloadMode
 		if artistMode, err := store.SettingGet("mode_" + artist.Name); err == nil && artistMode != "" {
 			downloadMode = artistMode
 		}
 
-		for _, album := range popular {
-			matched := matchAlbum(album.Name, lidarrAlbums)
-			if matched == nil {
-				store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, int(album.AvgPopularity), false)
-				result.SkippedAlbums = append(result.SkippedAlbums, fmt.Sprintf("%s (not in Lidarr)", album.Name))
+		// Score each Lidarr album by average Last.fm track score.
+		// An album is "popular" if its average track score >= threshold.
+		threshold := cfg.PopularityThreshold
+		popular := make([]albumWithScore, 0, len(lidarrAlbums))
+		for _, album := range lidarrAlbums {
+			tracks, err := lidarr.GetAlbumTracks(album.ID)
+			if err != nil || len(tracks) == 0 {
 				continue
 			}
+			var total, scored int
+			for _, t := range tracks {
+				key := strings.ToLower(strings.TrimSpace(t.Title))
+				score := lastfmScores.NameScores[key]
+				if score == 0 {
+					score = 10 // default for unmatched tracks
+				}
+				total += score
+				scored++
+			}
+			if scored == 0 {
+				continue
+			}
+			avg := total / scored
+			if avg >= threshold {
+				popular = append(popular, albumWithScore{album: &album, avgScore: avg})
+			}
+		}
+		result.NewAlbumsFound = len(popular)
 
+		// Process popular albums.
+		for _, aws := range popular {
+			album := aws.album
 			if downloadMode == "tracks" {
 				// Per-track 3-state model.
 				hitsKept, hitsFallen, pruned := processTracksThreeState(
-					artist, matched, album, lidarr, cfg.PopularityThreshold, lastfmScores, &result,
+					artist, album, lidarr, cfg.PopularityThreshold, lastfmScores, &result,
 				)
 				result.HitsKept += hitsKept
 				result.HitsFallen += hitsFallen
 				result.TracksPruned += pruned
 			} else {
-				// Album mode: existing behavior — monitor + search the whole album.
-				if err := lidarr.MonitorAndSearchAlbum(matched.ID); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("Failed to search %s: %v", album.Name, err))
+				// Album mode: monitor + search the whole album.
+				if err := lidarr.MonitorAndSearchAlbum(album.ID); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("Failed to search %s: %v", album.Title, err))
 					continue
 				}
-				// Note: AlbumStatusSet function doesn't exist in store, skipping for now
-				store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, int(album.AvgPopularity), true)
-				result.AddedAlbums = append(result.AddedAlbums, fmt.Sprintf("%s (avg pop: %.1f, type: %s)", album.Name, album.AvgPopularity, album.AlbumType))
+				store.CheckLogInsert(artist.ID, album.Title, nil, aws.avgScore, true)
+				result.AddedAlbums = append(result.AddedAlbums, fmt.Sprintf("%s (avg score: %d)", album.Title, aws.avgScore))
 				result.AlbumsAdded++
 			}
 		}
@@ -163,21 +149,16 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 	return results, nil
 }
 
+type albumWithScore struct {
+	album    *clients.LidarrAlbum
+	avgScore int
+}
+
 // processTracksThreeState applies the per-track 3-state (keep / hit / not_keep) model
-// for one album. Returns counters for hits kept, hits fallen (logged), and tracks pruned.
-//
-// State semantics (per plan §4):
-//   - "keep"      → ensure downloaded (search if missing); never prune
-//   - "hit"       → if score >= threshold: do nothing; if score < threshold:
-//                   log to hit_fallen_log, leave UI state as "hit", do NOT download,
-//                   do NOT auto-prune (user must act)
-//   - "not_keep"  → if downloaded: unmonitor in Lidarr (files remain); never re-download
-//   - "" (none)   → apply automation: keep if score >= threshold; mark for pruning if
-//                   downloaded AND score < threshold
+// for one Lidarr album. Returns counters for hits kept, hits fallen, and tracks pruned.
 func processTracksThreeState(
 	artist *store.Artist,
 	album *clients.LidarrAlbum,
-	deezerAlbum clients.AlbumInfo,
 	lidarr *clients.LidarrClient,
 	threshold int,
 	lastfmScores TrackScores,
@@ -185,26 +166,16 @@ func processTracksThreeState(
 ) (hitsKept, hitsFallen, pruned int) {
 	tracks, err := lidarr.GetAlbumTracks(album.ID)
 	if err != nil || len(tracks) == 0 {
-		result.Errors = append(result.Errors, fmt.Sprintf("No tracks for %s: %v", deezerAlbum.Name, err))
+		result.Errors = append(result.Errors, fmt.Sprintf("No tracks for %s: %v", album.Title, err))
 		return
-	}
-
-	// Map of track name (lower) → score from Deezer album tracks (fallback / supplement).
-	deezerScoreByName := make(map[string]int)
-	for _, tp := range deezerAlbum.TrackPopularities {
-		deezerScoreByName[strings.ToLower(strings.TrimSpace(tp.Name))] = tp.Popularity
 	}
 
 	for _, t := range tracks {
 		key := strings.ToLower(strings.TrimSpace(t.Title))
-		// Score lookup: Last.fm (primary) → Deezer fallback → default 10.
+		// Score from Last.fm only; default 10 for unmatched tracks.
 		score := lastfmScores.NameScores[key]
 		if score == 0 {
-			if ds, ok := deezerScoreByName[key]; ok && ds > 0 {
-				score = ds
-			} else {
-				score = 10
-			}
+			score = 10
 		}
 		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, "lastfm")
 
@@ -255,7 +226,7 @@ func processTracksThreeState(
 					// Mark for pruning: unmonitor + log.
 					if err := lidarr.UnmonitorTrack(t.ID); err == nil {
 						_ = store.TrackActionLog(artist.ID, t.ID, "unmonitored", "")
-						_ = store.PruningLogInsert(artist.ID, deezerAlbum.Name, "unmonitored", "", 1)
+						_ = store.PruningLogInsert(artist.ID, album.Title, "unmonitored", "", 1)
 						pruned++
 					}
 				}
@@ -263,8 +234,6 @@ func processTracksThreeState(
 		}
 	}
 
-	store.CheckLogInsert(artist.ID, deezerAlbum.Name, &deezerAlbum.DeezerURL, int(deezerAlbum.AvgPopularity), true)
-	result.AlbumsAdded++
 	return
 }
 
