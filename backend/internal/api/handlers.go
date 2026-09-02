@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
+	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/discord"
@@ -144,13 +146,38 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 			core.CheckResult
 			Debug struct {
 				Threshold     int      `json:"threshold"`
-				Mode         string   `json:"mode"`
+				Mode          string   `json:"mode"`
 				AlbumsChecked []string `json:"albums_checked"`
+				LastFMTest    struct {
+					ScoresFound int      `json:"scores_found"`
+					TopTracks  []string  `json:"top_tracks"`
+					Error      string    `json:"error,omitempty"`
+				} `json:"last_fm_test"`
 			} `json:"debug"`
 		}
 		out := DebugResult{CheckResult: results[0]}
 		out.Debug.Threshold = core.GetThreshold()
 		out.Debug.Mode = core.GetMode(results[0].ArtistName)
+
+		// Directly test Last.fm for this artist.
+		lastfm, err := clients.NewLastFMClient()
+		if err != nil {
+			out.Debug.LastFMTest.Error = err.Error()
+		} else {
+			scores, err := lastfm.GetArtistTopTracksScored(results[0].ArtistName)
+			if err != nil {
+				out.Debug.LastFMTest.Error = err.Error()
+			} else {
+				out.Debug.LastFMTest.ScoresFound = len(scores)
+				for name, score := range scores {
+					if len(out.Debug.LastFMTest.TopTracks) < 5 {
+						out.Debug.LastFMTest.TopTracks = append(out.Debug.LastFMTest.TopTracks,
+							fmt.Sprintf("%s=%d", name, score))
+					}
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(out)
 		return
