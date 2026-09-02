@@ -20,10 +20,9 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
-// Version, GitCommit, and BuildNumber are set at build time via -ldflags.
+// Version and BuildNumber are set at build time via -ldflags.
 // BuildNumber is auto-incremented every commit (git rev-list --count HEAD).
 var Version = "dev"
-var GitCommit = "unknown"
 var BuildNumber = "0"
 
 func main() {
@@ -76,19 +75,7 @@ func main() {
 	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-		version := Version
-		commit := GitCommit
-		build := BuildNumber
-
-		// Override commit from version.txt if available (allows runtime updates without rebuild)
-		if content, err := os.ReadFile("/data/version.txt"); err == nil {
-			if line := strings.SplitN(string(content), "\n", 2)[0]; strings.TrimSpace(line) != "" {
-				commit = strings.TrimSpace(line)
-				// Note: version string stays as build-time value (usually "dev")
-			}
-		}
-
-		json.NewEncoder(w).Encode(map[string]string{"version": version, "commit": commit, "build": build})
+		json.NewEncoder(w).Encode(map[string]string{"version": Version, "build": BuildNumber})
 	})
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
 	// We need to use a custom handler that routes API vs frontend.
