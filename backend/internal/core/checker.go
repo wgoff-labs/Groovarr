@@ -77,7 +77,7 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 
 		// Fetch Last.fm popularity data (primary) before processing albums.
 		// Deezer supplements Last.fm gaps via deezerAlbum.TrackPopularities.
-		lastfmScores := GetArtistTrackScores(artist.Name, deezerID)
+		lastfmScores := GetArtistTrackScores(artist.ID, artist.Name, deezerID)
 		log.Printf("[check] %s | lastfm scores: %d unique tracks", artist.Name, len(lastfmScores.NameScores))
 
 		// Get releases
@@ -199,21 +199,16 @@ func processTracksThreeState(
 		key := strings.ToLower(strings.TrimSpace(t.Title))
 		// Score lookup: Last.fm (primary) → Deezer fallback → default 10.
 		score := lastfmScores.NameScores[key]
-		source := "lastfm"
 		if score == 0 {
 			if ds, ok := deezerScoreByName[key]; ok && ds > 0 {
 				score = ds
-				source = "deezer"
 			} else {
 				score = 10
-				source = "default"
 			}
 		}
 		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, "lastfm")
 
 		state, _ := store.GetTrackPreference(artist.ID, t.ID)
-		log.Printf("[check] %s | track=%q | score=%d | source=%s | state=%q | hasFile=%v",
-			artist.Name, t.Title, score, source, state, t.HasFile)
 
 		switch state {
 		case "keep":

@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/config"
@@ -64,76 +63,61 @@ type TrackScore struct {
 	Score int
 }
 
-// GetArtistTopTracksScored returns track scores normalized to 0–100.
-func (c *LastFMClient) GetArtistTopTracksScored(artistName string) (map[string]int, error) {
-	result, err := c.get(map[string]string{
-		"method": "artist.gettoptracks",
-		"artist": artistName,
-		"limit":  "50",
-	})
-	if err != nil {
-		return nil, err
-	}
+// RawTrack holds the raw data returned by the Last.fm top-tracks endpoint.
+type RawTrack struct {
+	Name      string
+	PlayCount int64
+}
 
-	toptracks, ok := result["toptracks"].(map[string]any)
-	if !ok {
-		return nil, nil
+// GetArtistTopTracks fetches up to maxTracks tracks for an artist across multiple
+// pages (Last.fm pages at 50). Returns tracks ordered by playcount descending.
+func (c *LastFMClient) GetArtistTopTracks(artistName string, maxTracks int) ([]RawTrack, error) {
+	pageSize := 50
+	pages := (maxTracks + pageSize - 1) / pageSize
+	if pages < 1 {
+		pages = 1
 	}
+	var all []RawTrack
 
-	tracksAny, ok := toSlice(toptracks["track"])
-	if !ok {
-		return nil, nil
-	}
-
-	tracks, ok := tracksAny.([]any)
-	if !ok || len(tracks) == 0 {
-		return nil, nil
-	}
-
-	type trackInfo struct {
-		Name      string
-		PlayCount int
-	}
-	var tracksParsed []trackInfo
-
-	for _, item := range tracks {
-		if m, ok := item.(map[string]any); ok {
-			tracksParsed = append(tracksParsed, trackInfo{
-				Name:      strings.ToLower(strings.TrimSpace(lastfmStrVal(m, "name"))),
-				PlayCount: int(lastfmInt64Val(m, "playcount")),
-			})
+	for page := 1; page <= pages && len(all) < maxTracks; page++ {
+		result, err := c.get(map[string]string{
+			"method": "artist.gettoptracks",
+			"artist": artistName,
+			"limit":  fmt.Sprintf("%d", pageSize),
+			"page":   fmt.Sprintf("%d", page),
+		})
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	maxCount := 0
-	for _, t := range tracksParsed {
-		if t.PlayCount > maxCount {
-			maxCount = t.PlayCount
-		}
-	}
-	if maxCount == 0 {
-		maxCount = 1
-	}
-
-	scores := make(map[string]int, len(tracksParsed))
-	for _, t := range tracksParsed {
-		if t.Name == "" {
+		toptracks, ok := result["toptracks"].(map[string]any)
+		if !ok {
 			continue
 		}
-		// No floor: artists with one wildly popular track and many quiet ones
-		// should produce a useful distribution. Floor of 10 was hiding everything.
-		score := int((float64(t.PlayCount) / float64(maxCount)) * 100)
-		if score < 0 {
-			score = 0
+
+		tracksAny, _ := toSlice(toptracks["track"])
+		tracks, ok := tracksAny.([]any)
+		if !ok || len(tracks) == 0 {
+			continue
 		}
-		if score > 100 {
-			score = 100
+
+		for _, item := range tracks {
+			if m, ok := item.(map[string]any); ok {
+				all = append(all, RawTrack{
+					Name:      lastfmStrVal(m, "name"),
+					PlayCount: lastfmInt64Val(m, "playcount"),
+				})
+			}
 		}
-		scores[t.Name] = score
 	}
 
-	log.Printf("Last.fm: got %d track scores for '%s'", len(scores), artistName)
-	return scores, nil
+	// Trim to max.
+	if len(all) > maxTracks {
+		all = all[:maxTracks]
+	}
+
+	log.Printf("Last.fm: fetched %d raw tracks for '%s' across %d pages", len(all), artistName, pages)
+	return all, nil
 }
 
 func toSlice(v any) (any, bool) {

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -116,6 +117,15 @@ var migrations = []string{
 		play_count    INTEGER DEFAULT 0,
 		last_played   DATETIME,
 		UNIQUE(artist_id, lidarr_track_id),
+		FOREIGN KEY (artist_id) REFERENCES artists(id)
+	);`,
+	// Per-artist popularity cache freshness (drives background refresh)
+	`CREATE TABLE IF NOT EXISTS artist_popularity_cache (
+		artist_id      INTEGER PRIMARY KEY,
+		artist_name    TEXT NOT NULL,
+		last_fetched   DATETIME NOT NULL,
+		track_count    INTEGER DEFAULT 0,
+		max_playcount  INTEGER DEFAULT 0,
 		FOREIGN KEY (artist_id) REFERENCES artists(id)
 	);`,
 	// Track actions log (audit)
@@ -435,6 +445,72 @@ func GetTrackPopularity(artistID int64) ([]TrackPopularity, error) {
 		pops = append(pops, tp)
 	}
 	return pops, rows.Err()
+}
+
+// CacheFreshness returns when the popularity cache for an artist was last refreshed.
+// ok=false means the cache is missing or stale (older than maxAge).
+func CacheFreshness(artistID int64, maxAge time.Duration) (lastFetched time.Time, ok bool, err error) {
+	var t time.Time
+	err = db.QueryRow(
+		`SELECT last_fetched FROM artist_popularity_cache WHERE artist_id = ?`,
+		artistID,
+	).Scan(&t)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return t, time.Since(t) < maxAge, nil
+}
+
+// UpdateCacheFreshness records that an artist's popularity cache was just refreshed.
+func UpdateCacheFreshness(artistID int64, artistName string, trackCount, maxPlaycount int) error {
+	_, err := db.Exec(`
+		INSERT INTO artist_popularity_cache (artist_id, artist_name, last_fetched, track_count, max_playcount)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(artist_id) DO UPDATE SET
+			last_fetched=excluded.last_fetched,
+			track_count=excluded.track_count,
+			max_playcount=excluded.max_playcount`,
+		artistID, artistName, time.Now(), trackCount, maxPlaycount)
+	return err
+}
+
+// StaleArtistIDs returns up to `limit` artist IDs whose popularity cache is older than maxAge.
+// Used by the background refresher to walk the list without hammering the DB.
+func StaleArtistIDs(maxAge time.Duration, limit int) ([]int64, []string, error) {
+	cutoff := time.Now().Add(-maxAge)
+	rows, err := db.Query(`
+		SELECT a.id, a.name
+		FROM artists a
+		LEFT JOIN artist_popularity_cache c ON a.id = c.artist_id
+		WHERE c.last_fetched IS NULL OR c.last_fetched < ?
+		ORDER BY c.last_fetched ASC NULLS FIRST
+		LIMIT ?`,
+		cutoff, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	var names []string
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, id)
+		names = append(names, name)
+	}
+	return ids, names, rows.Err()
+}
+
+// DeleteArtistPopularity removes cached scores for an artist (used when re-scoring).
+func DeleteArtistPopularity(artistID int64) error {
+	_, err := db.Exec(`DELETE FROM track_popularity WHERE artist_id = ?`, artistID)
+	return err
 }
 
 // CheckLogInsert logs a check result for an album.

@@ -68,7 +68,7 @@ func Load() *Config {
 			DiscordAllowAllUsers: getEnvBool("DISCORD_ALLOW_ALL_USERS", true),
 			DiscordAutoThread:    getEnvBool("DISCORD_AUTO_THREAD", false),
 			CommandPrefix:        getEnv("COMMAND_PREFIX", "?"),
-			PopularityThreshold:  getEnvInt("POPULARITY_THRESHOLD", 60),
+			PopularityThreshold:  getEnvInt("POPULARITY_THRESHOLD", 30),
 			LastFMAPIKey:         getEnv("LASTFM_API_KEY", ""),
 			LidarrURL:            getEnv("LIDARR_URL", "http://localhost:8686"),
 			LidarrAPIKey:         getEnv("LIDARR_API_KEY", ""),

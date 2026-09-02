@@ -71,7 +71,7 @@ func PruneDownloadedAlbums(artistFilter string, force bool) ([]PruneResult, erro
 			deezerID = artist.DeezID
 		}
 
-		scores := GetArtistTrackScores(artist.Name, deezerID)
+		scores := GetArtistTrackScores(artist.ID, artist.Name, deezerID)
 
 		for _, la := range lidarrAlbums {
 			prunedKey := "pruned_" + strconv.FormatInt(artist.ID, 10) + "_" + la.Title
@@ -169,7 +169,7 @@ func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *Pr
 	if artist.DeezID != "" {
 		deezerID = artist.DeezID
 	}
-	scores := GetArtistTrackScores(artist.Name, deezerID)
+	scores := GetArtistTrackScores(artist.ID, artist.Name, deezerID)
 
 	lidarr, err := clients.NewLidarrClient()
 	if err != nil {

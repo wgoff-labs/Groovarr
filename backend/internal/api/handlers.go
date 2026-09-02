@@ -2,11 +2,8 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"sort"
 
-	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/discord"
@@ -133,64 +130,11 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 // CheckHandler triggers a manual popularity check.
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
-	debug := r.URL.Query().Get("debug") == "1"
-
 	results, err := core.RunDailyCheck(artist, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	if debug {
-		// Return extended diagnostics alongside the normal result.
-		type DebugResult struct {
-			core.CheckResult
-			Debug struct {
-				Threshold     int      `json:"threshold"`
-				Mode          string   `json:"mode"`
-				AlbumsChecked []string `json:"albums_checked"`
-				LastFMTest    struct {
-					ScoresFound int      `json:"scores_found"`
-					TopTracks  []string  `json:"top_tracks"`
-					Error      string    `json:"error,omitempty"`
-				} `json:"last_fm_test"`
-			} `json:"debug"`
-		}
-		out := DebugResult{CheckResult: results[0]}
-		out.Debug.Threshold = core.GetThreshold()
-		out.Debug.Mode = core.GetMode(results[0].ArtistName)
-
-		// Directly test Last.fm for this artist.
-		lastfm, err := clients.NewLastFMClient()
-		if err != nil {
-			out.Debug.LastFMTest.Error = err.Error()
-		} else {
-			scores, err := lastfm.GetArtistTopTracksScored(results[0].ArtistName)
-			if err != nil {
-				out.Debug.LastFMTest.Error = err.Error()
-			} else {
-				out.Debug.LastFMTest.ScoresFound = len(scores)
-				// Show all scores sorted descending so we can see the distribution.
-				type pair struct{ Name string; Score int }
-				var all []pair
-				for name, score := range scores {
-					all = append(all, pair{name, score})
-				}
-				sort.Slice(all, func(i, j int) bool { return all[i].Score > all[j].Score })
-				for _, p := range all {
-					if len(out.Debug.LastFMTest.TopTracks) < 10 {
-						out.Debug.LastFMTest.TopTracks = append(out.Debug.LastFMTest.TopTracks,
-							fmt.Sprintf("%s=%d", p.Name, p.Score))
-					}
-				}
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(out)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }

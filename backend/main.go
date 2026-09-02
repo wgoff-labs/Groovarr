@@ -14,6 +14,7 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/api"
 	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/connections"
+	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/discord"
 	"github.com/groovarr/groovarr/backend/internal/frontend"
 	"github.com/groovarr/groovarr/backend/internal/scheduler"
@@ -125,6 +126,10 @@ func main() {
 	if err := sch.Start(); err != nil {
 		log.Fatalf("Scheduler start failed: %v", err)
 	}
+
+	// Start background popularity refresher (keeps Last.fm cache warm).
+	refresher := core.NewPopularityRefresher()
+	refresher.Start()
 
 	// Start HTTP server
 	go func() {

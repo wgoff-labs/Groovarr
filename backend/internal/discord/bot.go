@@ -252,7 +252,7 @@ func (b *Bot) runAdd(ctx *CommandContext, name string) {
 		return
 	}
 
-	deezer := core.GetArtistTrackScores(name, "")
+	deezer := core.GetArtistTrackScores(0, name, "")
 	if len(deezer.NameScores) == 0 && len(deezer.DeezerIDScores) == 0 {
 		b.reply(ctx, fmt.Sprintf("❌ Could not find `%s` on Deezer or Last.fm.", name))
 		return
