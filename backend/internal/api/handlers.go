@@ -3,7 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
+	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/core"
 	"github.com/groovarr/groovarr/backend/internal/discord"
@@ -130,13 +132,75 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 // CheckHandler triggers a manual popularity check.
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
+	debug := r.URL.Query().Get("debug") == "1"
+
 	results, err := core.RunDailyCheck(artist, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Debug payload: top scored tracks (descending) for the artist, and
+	// the few lowest scores so we can see the actual distribution in the UI.
+	var dbg *DebugResult
+	if debug {
+		cfg := config.Load()
+		a, _ := store.ArtistGet(artist)
+		var scored []ScoredTrack
+		var top []ScoredTrack
+		var bottom []ScoredTrack
+		if a != nil {
+			tracks, _ := store.GetTrackPopularity(a.ID)
+			for _, t := range tracks {
+				scored = append(scored, ScoredTrack{
+					LidarrTrackID: t.LidarrTrackID,
+					Score:         t.PlayCount,
+				})
+			}
+			sort.Slice(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
+			n := len(scored)
+			if n > 10 {
+				top = scored[:10]
+			} else {
+				top = scored
+			}
+			if n > 10 {
+				bottom = scored[n-10:]
+			}
+		}
+		dbg = &DebugResult{
+			Threshold:   cfg.PopularityThreshold,
+			Mode:        cfg.DownloadMode,
+			TrackCount:  len(scored),
+			TopScores:   top,
+			LowScores:   bottom,
+		}
+	}
+
+	resp := CheckResponse{Results: results, Debug: dbg}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// CheckResponse wraps the result list with optional debug info.
+type CheckResponse struct {
+	Results []core.CheckResult `json:"results"`
+	Debug   *DebugResult       `json:"debug,omitempty"`
+}
+
+type DebugResult struct {
+	Threshold  int           `json:"threshold"`
+	Mode       string        `json:"mode"`
+	TrackCount int           `json:"track_count"`
+	TopScores  []ScoredTrack `json:"top_scores"`
+	LowScores  []ScoredTrack `json:"low_scores"`
+}
+
+type ScoredTrack struct {
+	LidarrTrackID int64  `json:"lidarr_track_id"`
+	PlayCount     int64  `json:"play_count"`
+	Score         int    `json:"score"`
+	Source        string `json:"source"`
 }
 
 // ScanHandler triggers a full catalog scan for an artist.
