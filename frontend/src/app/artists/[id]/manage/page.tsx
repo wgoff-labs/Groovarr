@@ -157,9 +157,6 @@ export default function ArtistManagePage() {
         setError(`Failed to load: ${e.message}`);
         setLidarrError(false);
       }
-      setArtist(null);
-      setAlbums([]);
-      setTracks([]);
     }
     setLoading(false);
   }, [artistId]);
