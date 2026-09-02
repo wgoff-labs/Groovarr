@@ -2,6 +2,8 @@ package frontend
 
 import (
 	"embed"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -22,10 +24,12 @@ var distFS embed.FS
 // nodeProxy holds the Node.js reverse proxy, lazily initialized.
 // nodeMu protects nodeProxy and nodeReady.
 var (
-	nodeMu     sync.RWMutex
-	nodeProxy  *httputil.ReverseProxy
-	nodeReady  = make(chan struct{}) // closed when Node.js is ready
-	nodeErr    error
+	nodeMu        sync.RWMutex
+	nodeProxy     *httputil.ReverseProxy
+	nodeReady     = make(chan struct{}) // closed when Node.js is ready
+	nodeErr       error
+	nodeLogBuf    strings.Builder
+	nodeLogMu     sync.Mutex
 )
 
 // NewHandler returns an HTTP handler that serves the Next.js frontend.
@@ -97,14 +101,49 @@ func startNodeBackground() {
 	})
 }
 
+// logNode logs a line to both the log and the in-memory buffer.
+func logNode(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	log.Printf("[node] %s", msg)
+	nodeLogMu.Lock()
+	nodeLogBuf.WriteString(msg)
+	nodeLogBuf.WriteString("\n")
+	nodeLogMu.Unlock()
+}
+
+// DebugNodeStatus returns the Node.js startup status for the /debug/node endpoint.
+func DebugNodeStatus() map[string]interface{} {
+	nodeLogMu.Lock()
+	logSnapshot := nodeLogBuf.String()
+	nodeLogMu.Unlock()
+	status := map[string]interface{}{"log": logSnapshot}
+	if nodeErr != nil {
+		status["error"] = nodeErr.Error()
+	}
+	select {
+	case <-nodeReady:
+		status["ready"] = true
+		nodeMu.RLock()
+		if nodeProxy != nil {
+			status["proxy"] = "initialized"
+		} else {
+			status["proxy"] = "nil (error)"
+		}
+		nodeMu.RUnlock()
+	default:
+		status["ready"] = false
+	}
+	return status
+}
+
 // startNodeProxy extracts the embedded Next.js standalone build, starts a Node.js
 // server, and stores the reverse proxy. Signals nodeReady when ready.
 func startNodeProxy() {
-	log.Printf("[frontend] Starting embedded Node.js server...")
+	logNode("Starting embedded Node.js server...")
 
-	tmpDir, err := os.MkdirTemp("", "groovarr-nextjs-*")
+	tmpDir, err := os.MkdirTemp("", "groovarr-nextjs-")
 	if err != nil {
-		log.Printf("[frontend] Failed to create temp dir: %v", err)
+		logNode("Failed to create temp dir: %v", err)
 		nodeErr = err
 		close(nodeReady)
 		return
@@ -112,35 +151,42 @@ func startNodeProxy() {
 
 	// Copy the standalone directory to the temp dir.
 	if err := copyDir(distFS, "dist/.next/standalone", tmpDir); err != nil {
-		log.Printf("[frontend] Failed to copy standalone dir: %v", err)
+		logNode("Failed to copy standalone dir: %v", err)
 		os.RemoveAll(tmpDir)
 		nodeErr = err
 		close(nodeReady)
 		return
 	}
 
+	logNode("Copied standalone to %s", tmpDir)
+
+	// Capture Node.js output to buffer so we can see errors.
+	var nodeOut strings.Builder
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
 	cmd.Env = append(os.Environ(), "PORT=3001")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = &nodeOut
+	cmd.Stderr = &nodeOut
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[frontend] Failed to start Node.js: %v", err)
+		logNode("Failed to start Node.js: %v. Output: %s", err, nodeOut.String())
 		os.RemoveAll(tmpDir)
-		nodeErr = err
+		nodeErr = fmt.Errorf("start node: %w: %s", err, nodeOut.String())
 		close(nodeReady)
 		return
 	}
+
+	logNode("Node.js process started (PID %d)", cmd.Process.Pid)
 
 	// Wait for Node.js to be ready (up to 60 seconds).
 	nodeURL, _ := url.Parse("http://localhost:3001")
 	for i := 0; i < 300; i++ { // 300 * 200ms = 60s
 		resp, err := http.Get("http://localhost:3001/")
 		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode < 500 {
-				log.Printf("[frontend] Node.js server ready on port 3001")
+				logNode("Node.js server ready on port 3001 (status %d, body: %s)", resp.StatusCode, strings.TrimSpace(string(body)[:100]))
 				proxy := httputil.NewSingleHostReverseProxy(nodeURL)
 				nodeMu.Lock()
 				nodeProxy = proxy
@@ -149,21 +195,21 @@ func startNodeProxy() {
 				// Reap Node.js process when it exits.
 				go func() {
 					cmd.Wait()
-					log.Printf("[frontend] Node.js server exited")
+					logNode("Node.js server exited. Output:\n%s", nodeOut.String())
 					os.RemoveAll(tmpDir)
 				}()
 				return
 			}
-			resp.Body.Close()
+			logNode("Node.js returned %d on /: %s", resp.StatusCode, strings.TrimSpace(string(body)[:200]))
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Timed out.
-	log.Printf("[frontend] Node.js server did not become ready after 60s")
+	logNode("Node.js server did not become ready after 60s. Output: %s", nodeOut.String())
 	cmd.Process.Kill()
 	os.RemoveAll(tmpDir)
-	nodeErr = err
+	nodeErr = fmt.Errorf("Node.js did not become ready: %s", nodeOut.String())
 	close(nodeReady)
 }
 

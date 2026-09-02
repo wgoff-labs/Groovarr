@@ -80,6 +80,14 @@ func main() {
 			mux.ServeHTTP(w, r)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/_debug/") {
+			switch r.URL.Path {
+			case "/_debug/node":
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(frontend.DebugNodeStatus())
+				return
+			}
+		}
 		frontend.NewHandler()(w, r)
 	})
 
