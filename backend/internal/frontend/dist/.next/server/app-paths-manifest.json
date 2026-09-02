@@ -1,10 +1,10 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/artists/[id]/album/[albumId]/manage/page": "app/artists/[id]/album/[albumId]/manage/page.js",
-  "/artists/[id]/manage/page": "app/artists/[id]/manage/page.js",
   "/artists/import/page": "app/artists/import/page.js",
-  "/logs/page": "app/logs/page.js",
   "/artists/page": "app/artists/page.js",
-  "/page": "app/page.js",
-  "/settings/page": "app/settings/page.js"
+  "/artists/[id]/manage/page": "app/artists/[id]/manage/page.js",
+  "/artists/[id]/album/[albumId]/manage/page": "app/artists/[id]/album/[albumId]/manage/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/logs/page": "app/logs/page.js",
+  "/page": "app/page.js"
 }

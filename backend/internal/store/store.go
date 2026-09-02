@@ -414,13 +414,13 @@ func PruningLogInsert(artistID int64, albumName string, action string, reason st
 }
 
 // UpsertTrackPopularity inserts or updates track popularity.
-func UpsertTrackPopularity(artistID, lidarrTrackID int64, score int, source string) error {
+func UpsertTrackPopularity(artistID, lidarrTrackID int64, score int, trackKey string) error {
 	_, err := db.Exec(
-		`INSERT INTO track_popularity (artist_id, lidarr_track_id, play_count, last_played) 
+		`INSERT INTO track_popularity (artist_id, lidarr_track_id, play_count, track_key)
 		 VALUES (?, ?, ?, ?)
-		 ON CONFLICT(artist_id, lidarr_track_id) DO UPDATE SET 
-		 play_count=excluded.play_count, last_played=excluded.last_played`,
-		artistID, lidarrTrackID, score, source,
+		 ON CONFLICT(artist_id, lidarr_track_id) DO UPDATE SET
+		 play_count=excluded.play_count, track_key=excluded.track_key`,
+		artistID, lidarrTrackID, score, trackKey,
 	)
 	return err
 }

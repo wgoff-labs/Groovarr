@@ -64,7 +64,7 @@ func GetArtistTrackScores(artistID int64, artistName, deezerID string) TrackScor
 				for _, t := range rawTracks {
 					score := scoreFromPlaycount(t.PlayCount, maxPC)
 					scores.NameScores[normalizeTrack(t.Name)] = score
-					_ = store.UpsertTrackPopularity(artistID, 0, score, "lastfm")
+					_ = store.UpsertTrackPopularity(artistID, 0, score, normalizeTrack(t.Name))
 				}
 				// Update cache freshness so we don't re-fetch this artist for 7 days.
 				_ = store.UpdateCacheFreshness(artistID, artistName, len(rawTracks), int(maxPC))
@@ -83,17 +83,35 @@ func GetArtistTrackScores(artistID int64, artistName, deezerID string) TrackScor
 }
 
 // loadScoresFromDB reads cached popularity scores from the database.
+// It returns a TrackScores map keyed by normalized track name.
 func loadScoresFromDB(artistID int64) TrackScores {
 	scores := TrackScores{
 		NameScores:     make(map[string]int),
 		DeezerIDScores: make(map[int64]int),
 	}
-	rows, err := store.GetTrackPopularity(artistID)
+	db := store.GetDB()
+	if db == nil {
+		return scores
+	}
+	rows, err := db.Query(
+		`SELECT play_count, track_key FROM track_popularity WHERE artist_id = ?`,
+		artistID,
+	)
 	if err != nil || rows == nil {
 		return scores
 	}
-	// We don't have the track name here, only the DB row.
-	// Caller must resolve by name in checker.go using Lidarr metadata.
+	defer rows.Close()
+
+	for rows.Next() {
+		var playCount int
+		var trackKey string
+		if err := rows.Scan(&playCount, &trackKey); err != nil {
+			continue // skip malformed row
+		}
+		if trackKey != "" {
+			scores.NameScores[trackKey] = playCount
+		}
+	}
 	return scores
 }
 

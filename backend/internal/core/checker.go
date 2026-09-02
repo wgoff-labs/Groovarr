@@ -100,15 +100,18 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 				continue
 			}
 			var total, scored int
-			for _, t := range tracks {
-				key := strings.ToLower(strings.TrimSpace(t.Title))
-				score := lastfmScores.NameScores[key]
-				if score == 0 {
-					score = 10 // default for unmatched tracks
-				}
-				total += score
-				scored++
-			}
+						for _, t := range tracks {
+							key := strings.ToLower(strings.TrimSpace(t.Title))
+							// Score from Last.fm only; default 10 for truly missing tracks.
+							var score int
+							if s, ok := lastfmScores.NameScores[key]; ok {
+								score = s
+							} else {
+								score = 10
+							}
+							total += score
+							scored++
+						}
 			if scored == 0 {
 				continue
 			}
@@ -172,12 +175,14 @@ func processTracksThreeState(
 
 	for _, t := range tracks {
 		key := strings.ToLower(strings.TrimSpace(t.Title))
-		// Score from Last.fm only; default 10 for unmatched tracks.
-		score := lastfmScores.NameScores[key]
-		if score == 0 {
+		// Score from Last.fm only; default 10 for truly missing tracks.
+		var score int
+		if s, ok := lastfmScores.NameScores[key]; ok {
+			score = s
+		} else {
 			score = 10
 		}
-		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, "lastfm")
+		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, key)
 
 		state, _ := store.GetTrackPreference(artist.ID, t.ID)
 
