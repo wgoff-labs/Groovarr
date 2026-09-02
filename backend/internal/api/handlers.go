@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/connections"
@@ -169,10 +170,17 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 				out.Debug.LastFMTest.Error = err.Error()
 			} else {
 				out.Debug.LastFMTest.ScoresFound = len(scores)
+				// Show all scores sorted descending so we can see the distribution.
+				type pair struct{ Name string; Score int }
+				var all []pair
 				for name, score := range scores {
-					if len(out.Debug.LastFMTest.TopTracks) < 5 {
+					all = append(all, pair{name, score})
+				}
+				sort.Slice(all, func(i, j int) bool { return all[i].Score > all[j].Score })
+				for _, p := range all {
+					if len(out.Debug.LastFMTest.TopTracks) < 10 {
 						out.Debug.LastFMTest.TopTracks = append(out.Debug.LastFMTest.TopTracks,
-							fmt.Sprintf("%s=%d", name, score))
+							fmt.Sprintf("%s=%d", p.Name, p.Score))
 					}
 				}
 			}

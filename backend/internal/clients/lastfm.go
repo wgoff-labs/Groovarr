@@ -120,7 +120,15 @@ func (c *LastFMClient) GetArtistTopTracksScored(artistName string) (map[string]i
 		if t.Name == "" {
 			continue
 		}
-		score := max(10, min(100, int((float64(t.PlayCount)/float64(maxCount))*100)))
+		// No floor: artists with one wildly popular track and many quiet ones
+		// should produce a useful distribution. Floor of 10 was hiding everything.
+		score := int((float64(t.PlayCount) / float64(maxCount)) * 100)
+		if score < 0 {
+			score = 0
+		}
+		if score > 100 {
+			score = 100
+		}
 		scores[t.Name] = score
 	}
 
