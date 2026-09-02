@@ -78,7 +78,19 @@ func main() {
 	mux.HandleFunc("/api/hit-fallen", api.HitFallenHandler)
 	mux.HandleFunc("/api/status", api.StatusHandler)
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"version": Version, "commit": GitCommit, "build": BuildNumber})
+		version := Version
+		commit := GitCommit
+		build := BuildNumber
+
+		// Override commit from version.txt if available (allows runtime updates without rebuild)
+		if content, err := os.ReadFile("/data/version.txt"); err == nil {
+			if line := strings.SplitN(string(content), "\n", 2)[0]; strings.TrimSpace(line) != "" {
+				commit = strings.TrimSpace(line)
+				// Note: version string stays as build-time value (usually "dev")
+			}
+		}
+
+		json.NewEncoder(w).Encode(map[string]string{"version": version, "commit": commit, "build": build})
 	})
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
 	// We need to use a custom handler that routes API vs frontend.

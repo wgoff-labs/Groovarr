@@ -23,6 +23,7 @@ services:
       - DB_SALT=${DB_SALT:-}
     volumes:
       - groovarr-data:/data
+      - ./version.txt:/data/version.txt:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
       interval: 30s
