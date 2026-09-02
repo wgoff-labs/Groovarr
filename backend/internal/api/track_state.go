@@ -29,17 +29,17 @@ func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
 	// Use splitPath to extract parts
 
 	parts := splitPath(path)
-	// Expected: ["", "api", "artist", artistId, "track", lidarrTrackId, "state"]
-	if len(parts) != 7 || parts[1] != "api" || parts[2] != "artist" || parts[4] != "track" || parts[6] != "state" {
+	// Expected: ["api", "artist", artistId, "track", lidarrTrackId, "state"]
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "artist" || parts[3] != "track" || parts[5] != "state" {
 		http.Error(w, "Invalid artist track state path", http.StatusBadRequest)
 		return
 	}
-	artistID, err := strconv.ParseInt(parts[3], 10, 64)
+	artistID, err := strconv.ParseInt(parts[2], 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid artist ID", http.StatusBadRequest)
 		return
 	}
-	lidarrTrackID, err := strconv.ParseInt(parts[5], 10, 64)
+	lidarrTrackID, err := strconv.ParseInt(parts[4], 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid track ID", http.StatusBadRequest)
 		return
