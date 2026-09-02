@@ -6,6 +6,7 @@ import (
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/config"
+	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
 // TrackScores holds popularity scores for an artist's tracks.
@@ -127,4 +128,23 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// GetThreshold returns the current popularity threshold (0–100).
+func GetThreshold() int {
+	cfg := config.Load()
+	return cfg.PopularityThreshold
+}
+
+// GetMode returns the download mode ("tracks" or "albums") for an artist,
+// falling back to the global default.
+func GetMode(artistName string) string {
+	key := "mode_" + artistName
+	if val, err := store.SettingGet(key); err == nil && val != "" {
+		return val
+	}
+	if val, err := store.SettingGet("mode_default"); err == nil && val != "" {
+		return val
+	}
+	return "albums"
 }

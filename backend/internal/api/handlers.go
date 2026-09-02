@@ -130,11 +130,32 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 // CheckHandler triggers a manual popularity check.
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
+	debug := r.URL.Query().Get("debug") == "1"
+
 	results, err := core.RunDailyCheck(artist, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if debug {
+		// Return extended diagnostics alongside the normal result.
+		type DebugResult struct {
+			core.CheckResult
+			Debug struct {
+				Threshold     int      `json:"threshold"`
+				Mode         string   `json:"mode"`
+				AlbumsChecked []string `json:"albums_checked"`
+			} `json:"debug"`
+		}
+		out := DebugResult{CheckResult: results[0]}
+		out.Debug.Threshold = core.GetThreshold()
+		out.Debug.Mode = core.GetMode(results[0].ArtistName)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
 }
