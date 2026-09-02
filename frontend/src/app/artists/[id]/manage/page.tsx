@@ -29,6 +29,10 @@ function StateBadge({ state }: { state: TrackState }) {
   );
 }
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+type PageSize = typeof PAGE_SIZE_OPTIONS[number];
+const ALL_SIZE = 99999;
+
 export default function ArtistManagePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -49,6 +53,12 @@ export default function ArtistManagePage() {
   type AlbumSortKey = 'title' | 'year' | 'trackCount' | 'monitored';
   const [albumSort, setAlbumSort] = useState<{ key: AlbumSortKey; dir: 'asc' | 'desc' }>({ key: 'title', dir: 'asc' });
 
+  // Pagination state
+  const [albumPageSize, setAlbumPageSize] = useState<PageSize | typeof ALL_SIZE>(10);
+  const [albumPage, setAlbumPage] = useState(1);
+  const [trackPageSize, setTrackPageSize] = useState<PageSize | typeof ALL_SIZE>(10);
+  const [trackPage, setTrackPage] = useState(1);
+
   const toggleTrackSort = (key: TrackSortKey) => {
     setTrackSort((prev) => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   };
@@ -58,6 +68,64 @@ export default function ArtistManagePage() {
 
   const SortIcon = ({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) => (
     <span className="ml-1 text-xs">{active ? (dir === 'asc' ? '↑' : '↓') : ''}</span>
+  );
+
+  const PageSizeButtons = ({
+    value,
+    onChange,
+  }: {
+    value: PageSize | typeof ALL_SIZE;
+    onChange: (v: PageSize | typeof ALL_SIZE) => void;
+  }) => (
+    <div className="flex gap-2 items-center text-sm">
+      <span className="text-gray-400">Page size:</span>
+      <button
+        onClick={() => onChange(10)}
+        className={`px-3 py-1 text-xs rounded ${value === 10 ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+      >10</button>
+      <button
+        onClick={() => onChange(20)}
+        className={`px-3 py-1 text-xs rounded ${value === 20 ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+      >20</button>
+      <button
+        onClick={() => onChange(50)}
+        className={`px-3 py-1 text-xs rounded ${value === 50 ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+      >50</button>
+      <button
+        onClick={() => onChange(ALL_SIZE)}
+        className={`px-3 py-1 text-xs rounded ${value === ALL_SIZE ? 'bg-emerald-500 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+      >All</button>
+    </div>
+  );
+
+  const PaginationControls = ({
+    page,
+    totalPages,
+    total,
+    onPageChange,
+  }: {
+    page: number;
+    totalPages: number;
+    total: number;
+    onPageChange: (p: number) => void;
+  }) => (
+    <div className="flex items-center justify-between mt-3 text-sm">
+      <div className="text-gray-400">
+        Page {page} of {totalPages} · {total} total
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page === 1}
+          className="text-xs text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+        >‹ Prev</button>
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page === totalPages}
+          className="text-xs text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+        >Next ›</button>
+      </div>
+    </div>
   );
 
   const loadManage = useCallback(async () => {
@@ -155,6 +223,25 @@ export default function ArtistManagePage() {
     return arr;
   }, [albums, albumSort]);
 
+  // Reset to page 1 when sort or page size changes
+  useEffect(() => { setAlbumPage(1); }, [albumSort, albumPageSize]);
+  useEffect(() => { setTrackPage(1); }, [trackSort, trackPageSize, search, stateFilter]);
+
+  // Paginate after sorting (so sort applies to the full dataset)
+  const paginatedAlbums = useMemo(() => {
+    if (albumPageSize === ALL_SIZE) return sortedAlbums;
+    const start = (albumPage - 1) * albumPageSize;
+    return sortedAlbums.slice(start, start + albumPageSize);
+  }, [sortedAlbums, albumPage, albumPageSize]);
+  const albumTotalPages = albumPageSize === ALL_SIZE ? 1 : Math.max(1, Math.ceil(sortedAlbums.length / albumPageSize));
+
+  const paginatedTracks = useMemo(() => {
+    if (trackPageSize === ALL_SIZE) return sortedTracks;
+    const start = (trackPage - 1) * trackPageSize;
+    return sortedTracks.slice(start, start + trackPageSize);
+  }, [sortedTracks, trackPage, trackPageSize]);
+  const trackTotalPages = trackPageSize === ALL_SIZE ? 1 : Math.max(1, Math.ceil(sortedTracks.length / trackPageSize));
+
   const toggleTrack = (trackId: number) => {
     setSelectedTracks((prev) => {
       const next = new Set(prev);
@@ -165,10 +252,10 @@ export default function ArtistManagePage() {
   };
 
   const toggleAllVisible = () => {
-    if (selectedTracks.size === sortedTracks.length) {
+    if (selectedTracks.size === paginatedTracks.length && paginatedTracks.length > 0) {
       setSelectedTracks(new Set());
     } else {
-      setSelectedTracks(new Set(sortedTracks.map((t) => t.lidarrId)));
+      setSelectedTracks(new Set(paginatedTracks.map((t) => t.lidarrId)));
     }
   };
 
@@ -251,45 +338,56 @@ export default function ArtistManagePage() {
 
       {/* Albums list */}
       <div className="card">
-        <h2 className="text-lg font-semibold mb-3">💿 Albums ({albums.length})</h2>
+        <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+          <h2 className="text-lg font-semibold">💿 Albums ({albums.length})</h2>
+          <PageSizeButtons value={albumPageSize} onChange={setAlbumPageSize} />
+        </div>
         {albums.length === 0 ? (
           <p className="text-gray-500 text-sm">No albums found in Lidarr yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('title')}>Album<SortIcon active={albumSort.key==='title'} dir={albumSort.dir} /></th>
-                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('year')}>Year<SortIcon active={albumSort.key==='year'} dir={albumSort.dir} /></th>
-                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('trackCount')}>Tracks<SortIcon active={albumSort.key==='trackCount'} dir={albumSort.dir} /></th>
-                  <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('monitored')}>Monitored<SortIcon active={albumSort.key==='monitored'} dir={albumSort.dir} /></th>
-                  <th className="pb-2 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedAlbums.map((a) => (
-                  <tr key={a.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
-                    <td className="py-2 text-white">{a.title}</td>
-                    <td className="py-2 text-gray-400">{a.year || '—'}</td>
-                    <td className="py-2 text-gray-400">{a.trackCount}</td>
-                    <td className="py-2">
-                      <span className={a.monitored ? 'text-emerald-400' : 'text-gray-500'}>
-                        {a.monitored ? '✓' : '—'}
-                      </span>
-                    </td>
-                    <td className="py-2 text-right">
-                      <Link
-                        href={`/artists/${artistId}/album/${a.lidarrId}/manage`}
-                        className="text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        🎛️ Manage Tracks
-                      </Link>
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-400 border-b border-gray-700">
+                    <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('title')}>Album<SortIcon active={albumSort.key==='title'} dir={albumSort.dir} /></th>
+                    <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('year')}>Year<SortIcon active={albumSort.key==='year'} dir={albumSort.dir} /></th>
+                    <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('trackCount')}>Tracks<SortIcon active={albumSort.key==='trackCount'} dir={albumSort.dir} /></th>
+                    <th className="pb-2 font-medium cursor-pointer select-none hover:text-emerald-400" onClick={() => toggleAlbumSort('monitored')}>Monitored<SortIcon active={albumSort.key==='monitored'} dir={albumSort.dir} /></th>
+                    <th className="pb-2 font-medium text-right">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginatedAlbums.map((a) => (
+                    <tr key={a.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
+                      <td className="py-2 text-white">{a.title}</td>
+                      <td className="py-2 text-gray-400">{a.year || '—'}</td>
+                      <td className="py-2 text-gray-400">{a.trackCount}</td>
+                      <td className="py-2">
+                        <span className={a.monitored ? 'text-emerald-400' : 'text-gray-500'}>
+                          {a.monitored ? '✓' : '—'}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right">
+                        <Link
+                          href={`/artists/${artistId}/album/${a.lidarrId}/manage`}
+                          className="text-xs text-blue-400 hover:text-blue-300"
+                        >
+                          🎛️ Manage Tracks
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <PaginationControls
+              page={albumPage}
+              totalPages={albumTotalPages}
+              total={sortedAlbums.length}
+              onPageChange={setAlbumPage}
+            />
+          </>
         )}
       </div>
 
@@ -297,7 +395,7 @@ export default function ArtistManagePage() {
       <div className="card">
         <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
           <h2 className="text-lg font-semibold">🎵 Tracks ({tracks.length})</h2>
-          <div className="flex gap-2 items-center text-sm">
+          <div className="flex gap-2 items-center text-sm flex-wrap">
             <input
               type="text"
               placeholder="Search track or album..."
@@ -322,6 +420,7 @@ export default function ArtistManagePage() {
             >
               {bulkMode ? '✓ Bulk Mode' : 'Bulk Edit'}
             </button>
+            <PageSizeButtons value={trackPageSize} onChange={setTrackPageSize} />
           </div>
         </div>
 
@@ -347,7 +446,7 @@ export default function ArtistManagePage() {
                     <th className="pb-2 font-medium w-8">
                       <input
                         type="checkbox"
-                        checked={selectedTracks.size === sortedTracks.length && sortedTracks.length > 0}
+                        checked={selectedTracks.size === paginatedTracks.length && paginatedTracks.length > 0}
                         onChange={toggleAllVisible}
                         className="rounded"
                       />
@@ -362,7 +461,7 @@ export default function ArtistManagePage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedTracks.map((t) => (
+                {paginatedTracks.map((t) => (
                   <tr key={t.lidarrId} className="border-b border-gray-700/50 last:border-0 hover:bg-white/5">
                     {bulkMode && (
                       <td className="py-2">
@@ -451,7 +550,14 @@ export default function ArtistManagePage() {
             </table>
           </div>
         )}
-
+        {sortedTracks.length > 0 && (
+          <PaginationControls
+            page={trackPage}
+            totalPages={trackTotalPages}
+            total={sortedTracks.length}
+            onPageChange={setTrackPage}
+          />
+        )}
         <p className="text-xs text-gray-500 mt-3">
           💡 <strong>Keep</strong>: always downloaded. <strong>Hit</strong>: stays if score ≥ threshold, else surfaces in Hit-Fallen log. <strong>Not Keep</strong>: unmonitored. <strong>Auto</strong>: scan decides based on popularity threshold.
         </p>
