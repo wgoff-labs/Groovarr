@@ -160,7 +160,7 @@ func startNodeProxy() {
 
 	logNode("Copied standalone to %s", tmpDir)
 
-	// Capture Node.js output to buffer so we can see errors.
+	// Capture Node.js output to buffer.
 	var nodeOut strings.Builder
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
@@ -169,7 +169,7 @@ func startNodeProxy() {
 	cmd.Stderr = &nodeOut
 
 	if err := cmd.Start(); err != nil {
-		logNode("Failed to start Node.js: %v. Output: %s", err, nodeOut.String())
+		logNode("Failed to start Node.js: %v. Output so far: %s", err, nodeOut.String())
 		os.RemoveAll(tmpDir)
 		nodeErr = fmt.Errorf("start node: %w: %s", err, nodeOut.String())
 		close(nodeReady)
@@ -178,35 +178,52 @@ func startNodeProxy() {
 
 	logNode("Node.js process started (PID %d)", cmd.Process.Pid)
 
-	// Wait for Node.js to be ready (up to 60 seconds).
+	// HTTP client with a per-request timeout.
+	httpClient := &http.Client{Timeout: 2 * time.Second}
 	nodeURL, _ := url.Parse("http://localhost:3001")
-	for i := 0; i < 300; i++ { // 300 * 200ms = 60s
-		resp, err := http.Get("http://localhost:3001/")
-		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if resp.StatusCode < 500 {
-				logNode("Node.js server ready on port 3001 (status %d, body: %s)", resp.StatusCode, strings.TrimSpace(string(body)[:100]))
-				proxy := httputil.NewSingleHostReverseProxy(nodeURL)
-				nodeMu.Lock()
-				nodeProxy = proxy
-				nodeMu.Unlock()
+
+	// Wait for Node.js to be ready (up to 120 seconds).
+	for i := 0; i < 600; i++ { // 600 * 200ms = 120s
+		logNode("Polling Node.js (attempt %d/600)...", i+1)
+		resp, err := httpClient.Get("http://localhost:3001/")
+		if err != nil {
+			// Log the type of error to see what's happening.
+			logNode("httpClient.Get error: %T %v", err, err)
+			// Check if the process is still alive.
+			if cmd.ProcessState != nil {
+				logNode("Node.js process exited already: %v. Output: %s", cmd.ProcessState, nodeOut.String())
+				os.RemoveAll(tmpDir)
+				nodeErr = fmt.Errorf("Node.js process exited: %v: %s", cmd.ProcessState, nodeOut.String())
 				close(nodeReady)
-				// Reap Node.js process when it exits.
-				go func() {
-					cmd.Wait()
-					logNode("Node.js server exited. Output:\n%s", nodeOut.String())
-					os.RemoveAll(tmpDir)
-				}()
 				return
 			}
-			logNode("Node.js returned %d on /: %s", resp.StatusCode, strings.TrimSpace(string(body)[:200]))
+			time.Sleep(200 * time.Millisecond)
+			continue
 		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		logNode("Node.js returned HTTP %d on /: %s", resp.StatusCode, strings.TrimSpace(string(body)[:200]))
+		if resp.StatusCode < 500 {
+			logNode("Node.js server ready on port 3001")
+			proxy := httputil.NewSingleHostReverseProxy(nodeURL)
+			nodeMu.Lock()
+			nodeProxy = proxy
+			nodeMu.Unlock()
+			close(nodeReady)
+			// Reap Node.js process when it exits.
+			go func() {
+				cmd.Wait()
+				logNode("Node.js server exited. Output:\n%s", nodeOut.String())
+				os.RemoveAll(tmpDir)
+			}()
+			return
+		}
+		// 5xx = still initializing, keep waiting
 		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Timed out.
-	logNode("Node.js server did not become ready after 60s. Output: %s", nodeOut.String())
+	logNode("Node.js server did not become ready after 120s. Output: %s", nodeOut.String())
 	cmd.Process.Kill()
 	os.RemoveAll(tmpDir)
 	nodeErr = fmt.Errorf("Node.js did not become ready: %s", nodeOut.String())
