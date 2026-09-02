@@ -160,6 +160,22 @@ func startNodeProxy() {
 
 	logNode("Copied standalone to %s", tmpDir)
 
+	// Verify critical node_modules are present (diagnostic).
+	if entries, err := os.ReadDir(filepath.Join(tmpDir, "node_modules")); err != nil {
+		logNode("WARNING: could not read node_modules: %v", err)
+	} else {
+		mods := make([]string, 0, len(entries))
+		for _, e := range entries {
+			mods = append(mods, e.Name())
+		}
+		logNode("node_modules contents (%d): %v", len(mods), mods)
+		if _, err := os.Stat(filepath.Join(tmpDir, "node_modules", "next")); err != nil {
+			logNode("WARNING: 'next' module MISSING from node_modules!")
+		} else {
+			logNode("'next' module present in node_modules ✓")
+		}
+	}
+
 	// Capture Node.js output in real-time via a pipe goroutine.
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
