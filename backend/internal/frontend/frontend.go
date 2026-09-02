@@ -3,11 +3,20 @@ package frontend
 import (
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
+	"fmt"
 )
 
 //go:embed all:dist
@@ -19,11 +28,17 @@ var distFS embed.FS
 // (the script tag containing this) is itself a JS string, so when the HTML is
 // parsed, \" is decoded back to a literal " in JS source.
 func escapeForJSString(s string) string {
-	return strings.ReplaceAll(s, "\"", "\\\"")
+	return strings.ReplaceAll(s, `"`, `\\\"`)
 }
 
 // NewHandler returns an HTTP handler that serves the Next.js static frontend
+// and proxies dynamic routes to an embedded Node.js server.
 func NewHandler() http.HandlerFunc {
+	// Once node server is started, reuse it.
+	var nodeOnce sync.Once
+	var nodeProxy *httputil.ReverseProxy
+	var nodeErr error
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqPath := r.URL.Path
 
@@ -33,6 +48,7 @@ func NewHandler() http.HandlerFunc {
 			staticFile := "dist/.next/static/" + file
 
 			if _, err := distFS.Open(staticFile); err != nil {
+				// Try fallback locations as in original code
 				if _, err2 := distFS.Open("dist/.next/" + file); err2 == nil {
 					content, _ := fs.ReadFile(distFS, "dist/.next/"+file)
 					setContentType(w, "dist/.next/"+file)
@@ -50,7 +66,6 @@ func NewHandler() http.HandlerFunc {
 				http.NotFound(w, r)
 				return
 			}
-
 			content, err := fs.ReadFile(distFS, staticFile)
 			if err != nil {
 				http.NotFound(w, r)
@@ -75,102 +90,132 @@ func NewHandler() http.HandlerFunc {
 			return
 		}
 
-		// Handle Next.js server-side pre-rendered pages
-		pagePath := mapToServerPath(reqPath)
-		content, err := fs.ReadFile(distFS, pagePath)
-		if err == nil {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.Write(content)
+		// For all other routes (non-API, non-static), proxy to Node.js server.
+		// Start the Node.js server lazily on first request.
+		nodeOnce.Do(func() {
+			nodeProxy, nodeErr = startNodeProxy()
+		})
+		if nodeErr != nil {
+			log.Printf("Failed to start Node.js proxy: %v", nodeErr)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-
-		// SPA Fallback: serve index.html with rewritten urlParts and initialTree for the actual URL.
-		// This allows the Next.js client-side router to render the correct page for dynamic routes.
-		content, err = fs.ReadFile(distFS, "dist/.next/server/app/index.html")
-		if err == nil {
-			html := string(content)
-
-			// Build the correct urlParts JSON array from the request path.
-			// e.g. /artists/1/manage -> ["", "artists", "1", "manage"]
-			cleanPath := strings.TrimPrefix(reqPath, "/")
-			urlParts := []string{""}
-			if cleanPath != "" {
-				urlParts = append(urlParts, strings.Split(cleanPath, "/")...)
-			}
-			urlPartsJSON, _ := json.Marshal(urlParts)
-
-			// Build the correct initialTree matching Next.js format:
-			// ["", {"children": [[segment1, {"children": [[segment2, ... [["__PAGE__", {}] ... ]]]}]}], "$undefined", "$undefined", true]
-			parts := []string{}
-			if cleanPath != "" {
-				parts = strings.Split(cleanPath, "/")
-			}
-			
-			// Build from innermost to outermost
-			// Start with the leaf: ["__PAGE__", {}]
-			current := []any{"__PAGE__", map[string]any{}}
-			
-			// Wrap each segment around the current structure
-			for i := len(parts) - 1; i >= 0; i-- {
-				// Create: [segment_name, {"children": [current]}]
-				current = []any{parts[i], map[string]any{"children": current}}
-			}
-			
-			// Wrap in the root structure: ["", {"children": [current]}, "$undefined", "$undefined", true]
-					initialTreeValue := []any{"", map[string]any{"children": current}, "$undefined", "$undefined", true}
-					initialTreeJSON, _ := json.Marshal(initialTreeValue)
-					initialTree := []byte(initialTreeJSON)
-
-					// The embedded HTML has JSON inside a JS string, so quotes are escaped as \" (one backslash + quote).
-					// In Go raw strings (backticks), backslashes are LITERAL, so we write \" to match \".
-		
-					urlPattern := `urlParts\":[\"\",\"\"],`
-					urlReplacement := `urlParts\":` + string(urlPartsJSON) + `,`
-
-					if strings.Contains(html, urlPattern) {
-						html = strings.Replace(html, urlPattern, urlReplacement, 1)
-						log.Printf("[fallback] urlParts replacement SUCCESS")
-					} else {
-						log.Printf("[fallback] urlParts replacement FAILED - expected: %q", urlReplacement)
-					}
-
-					// initialTree replacement - match the exact original pattern in index.html
-					// Pattern: initialTree\":["",{"children":[["__PAGE__",{}]},"$undefined","$undefined",true]
-					treePattern := `initialTree\":[\"\",{\"children\":[\"__PAGE__\",{}]},\"$undefined\",\"$undefined\",true],`
-					treeReplacement := `initialTree\":` + strings.ReplaceAll(string(initialTree), `"`, `\"`) + `,`
-
-					if strings.Contains(html, treePattern) {
-						html = strings.Replace(html, treePattern, treeReplacement, 1)
-						log.Printf("[fallback] initialTree replacement SUCCESS")
-					} else {
-						log.Printf("[fallback] initialTree replacement FAILED - expected: %q", treeReplacement)
-					}
-
-					// initialSeedData replacement
-					// Pattern: initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null]
-					seedPattern := `initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null],`
-					seedReplacement := `initialSeedData\":["",{"children":[["__PAGE__",{}]},null,null],`
-
-					if strings.Contains(html, seedPattern) {
-						html = strings.Replace(html, seedPattern, seedReplacement, 1)
-						log.Printf("[fallback] initialSeedData replacement SUCCESS (pattern no longer found in html)")
-					} else {
-						log.Printf("[fallback] initialSeedData replacement FAILED - pattern still in html")
-					}
-		
-					w.Header().Set("Content-Type", "text/html; charset=utf-8")
-					w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-					w.Header().Set("Pragma", "no-cache")
-					w.Header().Set("Expires", "0")
-					w.Write([]byte(html))
-					return
-				}
-
-		http.NotFound(w, r)
+		nodeProxy.ServeHTTP(w, r)
 	}
+}
+
+// startNodeProxy extracts the embedded Next.js standalone build to a temporary
+// directory, starts a Node.js server running server.js, and returns a reverse
+// proxy pointing to it.
+func startNodeProxy() (*httputil.ReverseProxy, error) {
+	// Create a temporary directory to hold the standalone build.
+	tmpDir, err := os.MkdirTemp("", "groovarr-nextjs-*")
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy the embedded standalone directory to the temporary directory.
+	standaloneSrc := "dist/.next/standalone"
+	if err := copyEmbeddedDir(distFS, standaloneSrc, tmpDir); err != nil {
+		os.RemoveAll(tmpDir)
+		return nil, err
+	}
+
+	// The server.js expects to run from the temporary directory.
+	// Set PORT=3001 to avoid conflicts with the Go server.
+	cmd := exec.Command("node", "server.js")
+	cmd.Dir = tmpDir
+	cmd.Env = append(os.Environ(), "PORT=3001")
+	// Inherit stdout and stderr so we can see logs in the main process.
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Start the process.
+	if err := cmd.Start(); err != nil {
+		os.RemoveAll(tmpDir)
+		return nil, err
+	}
+
+	// Wait for the process to be ready by attempting to connect.
+	// We'll do a simple retry mechanism.
+	var proxyURL *url.URL
+	for i := 0; i < 10; i++ {
+		proxyURL, err = url.Parse("http://localhost:3001")
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			cmd.Process.Kill()
+			return nil, err
+		}
+		proxy := httputil.NewSingleHostReverseProxy(proxyURL)
+		// Try a simple GET to / to see if the server is up.
+		resp, err := http.DefaultClient.Get("http://localhost:3001/")
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			// Success.
+			break
+		}
+		// Wait a bit before retrying.
+		time.Sleep(100 * time.Millisecond)
+		if i == 9 {
+			// Failed after retries.
+			os.RemoveAll(tmpDir)
+			cmd.Process.Kill()
+			return nil, fmt.Errorf("Node.js server did not become ready")
+		}
+	}
+
+	// Create the reverse proxy.
+	proxy := httputil.NewSingleHostReverseProxy(proxyURL)
+
+	// We also need to wait for the Node.js process to exit when the main program
+	// exits. We'll do that by storing the cmd in a global variable and calling
+	// Wait on shutdown. However, for now, we'll just let it run; the container
+	// will be killed when the main process exits.
+	// To avoid zombie processes, we can set up a signal handler, but given the
+	// complexity, we'll leave it for now and note that the process will be
+	// reaped when the parent exits (since we are the parent and we will wait
+	// for it if we store the cmd). We'll store the cmd in a closure.
+
+	// We'll return the proxy and also store the cmd so we can wait on it later.
+	// For simplicity, we'll just return the proxy and note that the tmpDir
+	// will be cleaned up when the process exits (we'll set up a wait goroutine).
+	go func() {
+		// Wait for the process to exit.
+		if err := cmd.Wait(); err != nil {
+			log.Printf("Node.js server exited with error: %v", err)
+		}
+		// Clean up the temporary directory.
+		if err := os.RemoveAll(tmpDir); err != nil {
+			log.Printf("Failed to remove temporary directory %s: %v", tmpDir, err)
+		}
+	}()
+
+	return proxy, nil
+}
+
+// copyEmbeddedDir copies a directory from the embedded filesystem to a physical directory.
+func copyEmbeddedDir(fs embed.FS, src string, dst string) error {
+	// Walk the embedded directory.
+	return fs.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		dstPath := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0o755)
+		}
+		data, err := fs.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, 0o644)
+	})
 }
 
 // mapToServerPath converts a URL path to the embedded server file path
@@ -199,6 +244,7 @@ func mapToServerPath(urlPath string) string {
 	return subPath
 }
 
+// setContentType sets the Content-Type header based on file extension.
 func setContentType(w http.ResponseWriter, filePath string) {
 	ext := strings.ToLower(path.Ext(filePath))
 	switch ext {

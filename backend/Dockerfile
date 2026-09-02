@@ -60,7 +60,7 @@ RUN set -e; \
 # --- Runtime stage ---
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata sqlite
+RUN apk add --no-cache ca-certificates tzdata sqlite nodejs npm
 
 WORKDIR /app
 COPY --from=builder /build/groovarr-backend /app/groovarr-backend
