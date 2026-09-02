@@ -20,9 +20,14 @@ groovarr-backend
 *.out
 coverage.html
 
-# Node (in case anyone runs npm in here)
+# Node: exclude top-level frontend node_modules only.
+# (The embedded dist/.next/standalone/node_modules must be retained for Node.js runtime.)
+# The standalone dir contains its own minimal node_modules with only the packages
+# needed by server.js (next, react, etc.), not the full dev install.
 node_modules
-.next
+node_modules/
+!dist/.next/standalone/node_modules
+!dist/.next/standalone/node_modules/**
 
 # Git
 .git
