@@ -45,6 +45,8 @@ export default function ArtistManagePage() {
   const [error, setError] = useState<string | null>(null);
   const [lidarrError, setLidarrError] = useState(false); // true when error is a Lidarr connection issue
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [downloadMode, setDownloadMode] = useState<'tracks' | 'album'>('tracks');
+  const [settingMode, setSettingMode] = useState(false);
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<'' | 'unset' | TrackState>('');
   const [bulkMode, setBulkMode] = useState(false);
@@ -138,6 +140,13 @@ export default function ArtistManagePage() {
       setArtist(data.artist);
       setAlbums(Array.isArray(data.albums) ? data.albums : []);
       setTracks(Array.isArray(data.tracks) ? data.tracks : []);
+      // Load this artist's download mode (falls back to global 'tracks' default)
+      try {
+        const modeResult = await api.settings.get(`mode_${data.artist.name}`);
+        setDownloadMode((modeResult.value as 'tracks' | 'album') || 'tracks');
+      } catch {
+        setDownloadMode('tracks');
+      }
     } catch (e: any) {
       // Structured Lidarr error takes priority — gives a friendlier message
       // and lets us offer a "Go to Settings" link in the error UI.
@@ -169,6 +178,21 @@ export default function ArtistManagePage() {
       setActionMsg(`Failed: ${e.message}`);
       setTimeout(() => setActionMsg(null), 4000);
     }
+  };
+
+  const changeDownloadMode = async (newMode: 'tracks' | 'album') => {
+    if (!artist || newMode === downloadMode) return;
+    setSettingMode(true);
+    try {
+      await api.settings.set(`mode_${artist.name}`, newMode);
+      setDownloadMode(newMode);
+      setActionMsg(`Switched to "${newMode === 'tracks' ? 'Tracks (3-state)' : 'Album'}" mode`);
+      setTimeout(() => setActionMsg(null), 3000);
+    } catch (e: any) {
+      setActionMsg(`Failed to change mode: ${e.message}`);
+      setTimeout(() => setActionMsg(null), 4000);
+    }
+    setSettingMode(false);
   };
 
   const bulkSetState = async (state: TrackState) => {
@@ -311,18 +335,46 @@ export default function ArtistManagePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="text-sm text-gray-400 mb-1">
-          <Link href="/artists" className="hover:text-emerald-400">Artists</Link>
-          <span className="mx-2">›</span>
-          <span>{artist.name}</span>
-          <span className="mx-2">›</span>
-          <span>Manage</span>
+      <div className="flex justify-between items-start flex-wrap gap-4">
+        <div>
+          <div className="text-sm text-gray-400 mb-1">
+            <Link href="/artists" className="hover:text-emerald-400">Artists</Link>
+            <span className="mx-2">›</span>
+            <span>{artist.name}</span>
+            <span className="mx-2">›</span>
+            <span>Manage</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white">🎛️ {artist.name}</h1>
+          <p className="text-xs text-gray-500 mt-1">
+            Lidarr ID: {artist.lidarrId ?? '—'} · Folder: {artist.rootFolder ?? '—'} · {albums.length} albums · {tracks.length} tracks
+          </p>
         </div>
-        <h1 className="text-2xl font-bold text-white">🎛️ {artist.name}</h1>
-        <p className="text-xs text-gray-500 mt-1">
-          Lidarr ID: {artist.lidarrId ?? '—'} · Folder: {artist.rootFolder ?? '—'} · {albums.length} albums · {tracks.length} tracks
-        </p>
+        {/* Mode switcher */}
+        <div className="flex items-center gap-1 mt-1">
+          <span className="text-xs text-gray-500 mr-1">Mode:</span>
+          <button
+            onClick={() => changeDownloadMode('tracks')}
+            disabled={settingMode}
+            className={`px-3 py-1.5 text-xs rounded font-medium transition-colors ${
+              downloadMode === 'tracks'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            } disabled:opacity-50`}
+          >
+            Tracks
+          </button>
+          <button
+            onClick={() => changeDownloadMode('album')}
+            disabled={settingMode}
+            className={`px-3 py-1.5 text-xs rounded font-medium transition-colors ${
+              downloadMode === 'album'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            } disabled:opacity-50`}
+          >
+            Album
+          </button>
+        </div>
       </div>
 
       {actionMsg && (
