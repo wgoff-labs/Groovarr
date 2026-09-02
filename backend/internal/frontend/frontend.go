@@ -150,7 +150,7 @@ func startNodeProxy() {
 	}
 
 	// Copy the standalone directory to the temp dir.
-	if err := copyDir(distFS, "dist/.next/standalone", tmpDir); err != nil {
+	if err := copyDir(distFS, "dist", tmpDir); err != nil {
 		logNode("Failed to copy standalone dir: %v", err)
 		os.RemoveAll(tmpDir)
 		nodeErr = err

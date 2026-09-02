@@ -1,0 +1,23 @@
+# Frontend build artifacts (rebuilt inside the Docker image)
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+
+# Backend build artifacts
+backend/groovarr-backend
+backend/internal/frontend/dist/
+backend/dist/
+
+# Git & IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Logs and local data
+*.log
+data/
+
+# OS noise
+.DS_Store
+Thumbs.db

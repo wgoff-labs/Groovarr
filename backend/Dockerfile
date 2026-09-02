@@ -1,6 +1,18 @@
-# --- Build stage ---
-FROM golang:1.24-alpine AS builder
+# --- Build stage for the Next.js frontend ---
+FROM node:22-alpine AS frontend-builder
+WORKDIR /build
 
+# Cache npm deps
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+# Build the standalone Next.js bundle
+COPY frontend/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# --- Build stage for the Go backend ---
+FROM golang:1.24-alpine AS builder
 WORKDIR /build
 
 # Install CGO deps for SQLite
@@ -16,22 +28,21 @@ ARG VERSION=
 ARG CACHE_BUST=1
 
 # Cache deps
-COPY go.mod go.sum ./
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 # Touch the version file using the CACHE_BUST arg so this layer (and all
 # subsequent layers including COPY . .) invalidate when CACHE_BUST changes.
 RUN echo "CACHE_BUST=$CACHE_BUST" >> /tmp/.build-marker
 
-# Build
-COPY . .
+# Copy the backend source plus the freshly built frontend dist (so `//go:embed all:dist` picks it up)
+COPY backend/ ./
+COPY --from=frontend-builder /build/.next/standalone ./internal/frontend/dist
 
 # Resolve GIT_COMMIT (in priority order):
 #   1. GIT_COMMIT build arg (passed by user locally)
 #   2. VERSION build arg (Warren sets this to the commit hash before pushing)
-#   3. version.txt in the build context (git commit hash)
-#   4. "dev" as last resort
-# Note: .git/HEAD is excluded from Portainer build context, so no .git/ fallback
+#   3. "dev" as last resort
 RUN set -e; \
     echo "=== Groovarr Build ==="; \
     GIT_COMMIT_VAL=dev; \
@@ -41,9 +52,6 @@ RUN set -e; \
     elif [ -n "${VERSION}" ]; then \
       GIT_COMMIT_VAL="${VERSION}"; \
       echo "Using VERSION build arg: $GIT_COMMIT_VAL"; \
-    elif [ -f /build/version.txt ]; then \
-      GIT_COMMIT_VAL=$(cat /build/version.txt | tr -d ' \n'); \
-      echo "Read GIT_COMMIT=$GIT_COMMIT_VAL from /build/version.txt"; \
     else \
       echo "version.txt not found, using dev"; \
     fi; \
@@ -51,7 +59,7 @@ RUN set -e; \
     echo "Building with GIT_COMMIT=$GIT_COMMIT_VAL BUILD_NUM=$BUILD_NUM"; \
     set -x; \
     CGO_ENABLED=1 GOOS=linux go build \
-        -ldflags="-s -w -X main.GitCommit=$GIT_COMMIT_VAL -X main.BuildNumber=$BUILD_NUM -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -ldflags="-s -w -X main.BuildNumber=$BUILD_NUM -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         -o groovarr-backend . || { \
         echo "BUILD FAILED - go build output above"; \
         exit 1; \
