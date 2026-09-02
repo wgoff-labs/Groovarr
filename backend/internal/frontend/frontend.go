@@ -2,8 +2,6 @@ package frontend
 
 import (
 	"embed"
-	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -21,178 +19,159 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// escapeForJSString escapes a string for safe inclusion in a JS string literal.
-// It replaces " with \" (one backslash + one quote, 2 bytes total) so the result
-// can be safely embedded inside a "..." JS string literal. The next layer up
-// (the script tag containing this) is itself a JS string, so when the HTML is
-// parsed, \" is decoded back to a literal " in JS source.
-func escapeForJSString(s string) string {
-	return strings.ReplaceAll(s, `"`, `\\\"`)
-}
+// nodeProxy holds the Node.js reverse proxy, lazily initialized.
+// nodeMu protects nodeProxy and nodeReady.
+var (
+	nodeMu     sync.RWMutex
+	nodeProxy  *httputil.ReverseProxy
+	nodeReady  = make(chan struct{}) // closed when Node.js is ready
+	nodeErr    error
+)
 
-// NewHandler returns an HTTP handler that serves the Next.js static frontend
-// and proxies dynamic routes to an embedded Node.js server.
+// NewHandler returns an HTTP handler that serves the Next.js frontend.
+// It serves pre-rendered HTML for static routes and proxies dynamic routes
+// to the embedded Node.js standalone server.
 func NewHandler() http.HandlerFunc {
-	// Once node server is started, reuse it.
-	var nodeOnce sync.Once
-	var nodeProxy *httputil.ReverseProxy
-	var nodeErr error
+	// Start Node.js startup in the background on the first call.
+	// Subsequent calls are no-ops.
+	startNodeBackground()
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqPath := r.URL.Path
 
-		// Handle Next.js static assets (/_next/static/*)
+		// Static assets: /_next/static/*
 		if strings.HasPrefix(reqPath, "/_next/static/") {
-			file := strings.TrimPrefix(reqPath, "/_next/static/")
-			staticFile := "dist/.next/static/" + file
-
-			if _, err := distFS.Open(staticFile); err != nil {
-				// Try fallback locations as in original code
-				if _, err2 := distFS.Open("dist/.next/" + file); err2 == nil {
-					content, _ := fs.ReadFile(distFS, "dist/.next/"+file)
-					setContentType(w, "dist/.next/"+file)
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-					w.Write(content)
-					return
-				}
-				if _, err3 := distFS.Open("dist/.next/server/" + file); err3 == nil {
-					content, _ := fs.ReadFile(distFS, "dist/.next/server/"+file)
-					setContentType(w, "dist/.next/server/"+file)
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-					w.Write(content)
-					return
-				}
-				http.NotFound(w, r)
-				return
-			}
-			content, err := fs.ReadFile(distFS, staticFile)
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			setContentType(w, staticFile)
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			w.Write(content)
+			serveStaticAsset(w, r, reqPath)
 			return
 		}
 
-		// Handle public assets (/public/*)
+		// Public assets: /public/*
 		if strings.HasPrefix(reqPath, "/public/") {
-			filePath := "dist/" + strings.TrimPrefix(reqPath, "/")
-			content, err := fs.ReadFile(distFS, filePath)
-			if err != nil {
-				http.NotFound(w, r)
-				return
-			}
-			setContentType(w, filePath)
+			servePublicAsset(w, r, reqPath)
+			return
+		}
+
+		// API routes should have been handled by the main router before this handler.
+		// Try pre-rendered HTML for static routes (artists.html, settings.html, etc.)
+		// This gives instant response even while Node.js is warming up.
+		pagePath := mapToServerPath(reqPath)
+		if content, err := fs.ReadFile(distFS, pagePath); err == nil {
+			setNoCache(w)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(content)
 			return
 		}
 
-		// For all other routes (non-API, non-static), proxy to Node.js server.
-		// Start the Node.js server lazily on first request.
-		nodeOnce.Do(func() {
-			nodeProxy, nodeErr = startNodeProxy()
-		})
-		if nodeErr != nil {
-			log.Printf("Failed to start Node.js proxy: %v", nodeErr)
+		// No pre-rendered HTML. Proxy to Node.js (handles SSR for dynamic routes).
+		// Wait up to 30 seconds for Node.js to be ready.
+		select {
+		case <-nodeReady:
+			// Node.js is ready.
+		case <-time.After(30 * time.Second):
+			// Timeout — log and return error.
+			log.Printf("[frontend] Node.js server did not become ready within 30s")
+			http.Error(w, "Service temporarily unavailable (server warming up)", http.StatusServiceUnavailable)
+			return
+		}
+
+		nodeMu.RLock()
+		proxy := nodeProxy
+		nodeMu.RUnlock()
+
+		if proxy == nil {
+			log.Printf("[frontend] Node.js proxy is nil")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		nodeProxy.ServeHTTP(w, r)
+
+		proxy.ServeHTTP(w, r)
 	}
 }
 
-// startNodeProxy extracts the embedded Next.js standalone build to a temporary
-// directory, starts a Node.js server running server.js, and returns a reverse
-// proxy pointing to it.
-func startNodeProxy() (*httputil.ReverseProxy, error) {
-	// Create a temporary directory to hold the standalone build.
+// startNodeBackground starts the Node.js server in a background goroutine.
+// It runs exactly once (protected by sync.Once).
+func startNodeBackground() {
+	var once sync.Once
+	once.Do(func() {
+		go startNodeProxy()
+	})
+}
+
+// startNodeProxy extracts the embedded Next.js standalone build, starts a Node.js
+// server, and stores the reverse proxy. Signals nodeReady when ready.
+func startNodeProxy() {
+	log.Printf("[frontend] Starting embedded Node.js server...")
+
 	tmpDir, err := os.MkdirTemp("", "groovarr-nextjs-*")
 	if err != nil {
-		return nil, err
+		log.Printf("[frontend] Failed to create temp dir: %v", err)
+		nodeErr = err
+		close(nodeReady)
+		return
 	}
 
-	// Copy the embedded standalone directory to the temporary directory.
-	standaloneSrc := "dist/.next/standalone"
-	if err := copyEmbeddedDir(distFS, standaloneSrc, tmpDir); err != nil {
+	// Copy the standalone directory to the temp dir.
+	if err := copyDir(distFS, "dist/.next/standalone", tmpDir); err != nil {
+		log.Printf("[frontend] Failed to copy standalone dir: %v", err)
 		os.RemoveAll(tmpDir)
-		return nil, err
+		nodeErr = err
+		close(nodeReady)
+		return
 	}
 
-	// The server.js expects to run from the temporary directory.
-	// Set PORT=3001 to avoid conflicts with the Go server.
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
 	cmd.Env = append(os.Environ(), "PORT=3001")
-	// Inherit stdout and stderr so we can see logs in the main process.
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// Start the process.
+
 	if err := cmd.Start(); err != nil {
+		log.Printf("[frontend] Failed to start Node.js: %v", err)
 		os.RemoveAll(tmpDir)
-		return nil, err
+		nodeErr = err
+		close(nodeReady)
+		return
 	}
 
-	// Wait for the process to be ready by attempting to connect.
-	// We'll do a simple retry mechanism.
-	proxyURL, err := url.Parse("http://localhost:3001")
-	if err != nil {
-		os.RemoveAll(tmpDir)
-		cmd.Process.Kill()
-		return nil, err
-	}
-	for i := 0; i < 50; i++ {
-		resp, err := http.DefaultClient.Get("http://localhost:3001/")
-		if err == nil && resp.StatusCode == http.StatusOK {
+	// Wait for Node.js to be ready (up to 60 seconds).
+	nodeURL, _ := url.Parse("http://localhost:3001")
+	for i := 0; i < 300; i++ { // 300 * 200ms = 60s
+		resp, err := http.Get("http://localhost:3001/")
+		if err == nil {
 			resp.Body.Close()
-			break
-		}
-		if resp != nil {
+			if resp.StatusCode < 500 {
+				log.Printf("[frontend] Node.js server ready on port 3001")
+				proxy := httputil.NewSingleHostReverseProxy(nodeURL)
+				nodeMu.Lock()
+				nodeProxy = proxy
+				nodeMu.Unlock()
+				close(nodeReady)
+				// Reap Node.js process when it exits.
+				go func() {
+					cmd.Wait()
+					log.Printf("[frontend] Node.js server exited")
+					os.RemoveAll(tmpDir)
+				}()
+				return
+			}
 			resp.Body.Close()
-		}
-		if i == 49 {
-			os.RemoveAll(tmpDir)
-			cmd.Process.Kill()
-			return nil, fmt.Errorf("Node.js server did not become ready")
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Create the reverse proxy.
-	proxy := httputil.NewSingleHostReverseProxy(proxyURL)
-
-	// We also need to wait for the Node.js process to exit when the main program
-	// exits. We'll do that by storing the cmd in a global variable and calling
-	// Wait on shutdown. However, for now, we'll just let it run; the container
-	// will be killed when the main process exits.
-	// To avoid zombie processes, we can set up a signal handler, but given the
-	// complexity, we'll leave it for now and note that the process will be
-	// reaped when the parent exits (since we are the parent and we will wait
-	// for it if we store the cmd). We'll store the cmd in a closure.
-
-	// We'll return the proxy and also store the cmd so we can wait on it later.
-	// For simplicity, we'll just return the proxy and note that the tmpDir
-	// will be cleaned up when the process exits (we'll set up a wait goroutine).
-	go func() {
-		// Wait for the process to exit.
-		if err := cmd.Wait(); err != nil {
-			log.Printf("Node.js server exited with error: %v", err)
-		}
-		// Clean up the temporary directory.
-		if err := os.RemoveAll(tmpDir); err != nil {
-			log.Printf("Failed to remove temporary directory %s: %v", tmpDir, err)
-		}
-	}()
-
-	return proxy, nil
+	// Timed out.
+	log.Printf("[frontend] Node.js server did not become ready after 60s")
+	cmd.Process.Kill()
+	os.RemoveAll(tmpDir)
+	nodeErr = err
+	close(nodeReady)
 }
 
-// copyEmbeddedDir copies a directory from the embedded filesystem to a physical directory.
-func copyEmbeddedDir(emb embed.FS, src string, dst string) error {
-	return fs.WalkDir(emb, src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+// copyDir copies an entire directory tree from the embedded filesystem to dst.
+func copyDir(emb embed.FS, src, dst string) error {
+	return fs.WalkDir(emb, src, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 		rel, err := filepath.Rel(src, p)
 		if err != nil {
@@ -213,30 +192,61 @@ func copyEmbeddedDir(emb embed.FS, src string, dst string) error {
 	})
 }
 
-// mapToServerPath converts a URL path to the embedded server file path
+// mapToServerPath converts a URL path to the embedded server file path.
 func mapToServerPath(urlPath string) string {
 	if urlPath == "" || urlPath == "/" {
 		return "dist/.next/server/app/index.html"
 	}
-
 	cleanPath := strings.TrimPrefix(urlPath, "/")
-
-	// Handle Next.js data manifest
 	if strings.HasPrefix(cleanPath, "_next/data/") {
 		parts := strings.Split(cleanPath, "/")
 		if len(parts) >= 4 {
 			return "dist/.next/server/app/" + strings.Join(parts[3:], "/")
 		}
 	}
-
-	// Handle static pages - try both flat .html format and subdirectory/index.html format
 	flatPath := "dist/.next/server/app/" + cleanPath + ".html"
 	subPath := "dist/.next/server/app/" + cleanPath + "/index.html"
-
 	if _, err := distFS.Open(flatPath); err == nil {
 		return flatPath
 	}
 	return subPath
+}
+
+// serveStaticAsset serves Next.js static assets from the embedded filesystem.
+func serveStaticAsset(w http.ResponseWriter, r *http.Request, reqPath string) {
+	file := strings.TrimPrefix(reqPath, "/_next/static/")
+	staticFile := "dist/.next/static/" + file
+
+	// Try in order: static dir, .next/ root, .next/server/
+	paths := []string{staticFile, "dist/.next/" + file, "dist/.next/server/" + file}
+	for _, p := range paths {
+		if content, err := fs.ReadFile(distFS, p); err == nil {
+			setContentType(w, p)
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Write(content)
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
+// servePublicAsset serves public assets from the embedded filesystem.
+func servePublicAsset(w http.ResponseWriter, r *http.Request, reqPath string) {
+	filePath := "dist/" + strings.TrimPrefix(reqPath, "/")
+	content, err := fs.ReadFile(distFS, filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	setContentType(w, filePath)
+	w.Write(content)
+}
+
+// setNoCache sets headers to prevent caching of dynamic pages.
+func setNoCache(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 }
 
 // setContentType sets the Content-Type header based on file extension.
@@ -271,6 +281,3 @@ func setContentType(w http.ResponseWriter, filePath string) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 }
-
-// keep json import used
-var _ = json.Marshal
