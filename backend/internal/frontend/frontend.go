@@ -30,6 +30,7 @@ var (
 	nodeErr       error
 	nodeLogBuf    strings.Builder
 	nodeLogMu     sync.Mutex
+	nodeStartOnce sync.Once // ensures Node.js is started exactly once
 )
 
 // NewHandler returns an HTTP handler that serves the Next.js frontend.
@@ -95,8 +96,7 @@ func NewHandler() http.HandlerFunc {
 // startNodeBackground starts the Node.js server in a background goroutine.
 // It runs exactly once (protected by sync.Once).
 func startNodeBackground() {
-	var once sync.Once
-	once.Do(func() {
+	nodeStartOnce.Do(func() {
 		go startNodeProxy()
 	})
 }
@@ -163,7 +163,9 @@ func startNodeProxy() {
 	// Capture Node.js output in real-time via a pipe goroutine.
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
-	cmd.Env = append(os.Environ(), "PORT=3001")
+	// Bind to 0.0.0.0 so we listen on all interfaces (avoids "container IP" bind issues).
+	// Go will connect via 127.0.0.1 below.
+	cmd.Env = append(os.Environ(), "PORT=3001", "HOSTNAME=0.0.0.0")
 	cmd.Stdin = nil // prevent Node from blocking on stdin
 
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -221,12 +223,14 @@ func startNodeProxy() {
 
 	// HTTP client with a per-request timeout.
 	httpClient := &http.Client{Timeout: 2 * time.Second}
-	nodeURL, _ := url.Parse("http://localhost:3001")
+	// Use 127.0.0.1 explicitly to avoid IPv6 ([::1]) resolution issues
+	// in containers where Node.js binds to 0.0.0.0 but localhost resolves to ::1.
+	nodeURL, _ := url.Parse("http://127.0.0.1:3001")
 
 	// Wait for Node.js to be ready (up to 120 seconds).
 	for i := 0; i < 600; i++ { // 600 * 200ms = 120s
 		logNode("Polling Node.js (attempt %d/600)...", i+1)
-		resp, err := httpClient.Get("http://localhost:3001/")
+		resp, err := httpClient.Get("http://127.0.0.1:3001/")
 		if err != nil {
 			// Log the type of error to see what's happening.
 			logNode("httpClient.Get error: %T %v", err, err)
