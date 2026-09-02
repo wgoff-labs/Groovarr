@@ -160,18 +160,59 @@ func startNodeProxy() {
 
 	logNode("Copied standalone to %s", tmpDir)
 
-	// Capture Node.js output to buffer.
-	var nodeOut strings.Builder
+	// Capture Node.js output in real-time via a pipe goroutine.
 	cmd := exec.Command("node", "server.js")
 	cmd.Dir = tmpDir
 	cmd.Env = append(os.Environ(), "PORT=3001")
-	cmd.Stdout = &nodeOut
-	cmd.Stderr = &nodeOut
+	cmd.Stdin = nil // prevent Node from blocking on stdin
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		logNode("Failed to create stdout pipe: %v", err)
+		os.RemoveAll(tmpDir)
+		nodeErr = fmt.Errorf("stdout pipe: %w", err)
+		close(nodeReady)
+		return
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		logNode("Failed to create stderr pipe: %v", err)
+		os.RemoveAll(tmpDir)
+		nodeErr = fmt.Errorf("stderr pipe: %w", err)
+		close(nodeReady)
+		return
+	}
+
+	// Drain stdout/stderr in background and append to log buffer.
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := stdoutPipe.Read(buf)
+			if n > 0 {
+				logNode("node stdout: %s", strings.TrimSpace(string(buf[:n])))
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := stderrPipe.Read(buf)
+			if n > 0 {
+				logNode("node stderr: %s", strings.TrimSpace(string(buf[:n])))
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
 
 	if err := cmd.Start(); err != nil {
-		logNode("Failed to start Node.js: %v. Output so far: %s", err, nodeOut.String())
+		logNode("Failed to start Node.js: %v", err)
 		os.RemoveAll(tmpDir)
-		nodeErr = fmt.Errorf("start node: %w: %s", err, nodeOut.String())
+		nodeErr = fmt.Errorf("start node: %w", err)
 		close(nodeReady)
 		return
 	}
@@ -191,9 +232,9 @@ func startNodeProxy() {
 			logNode("httpClient.Get error: %T %v", err, err)
 			// Check if the process is still alive.
 			if cmd.ProcessState != nil {
-				logNode("Node.js process exited already: %v. Output: %s", cmd.ProcessState, nodeOut.String())
+				logNode("Node.js process exited already: %v", cmd.ProcessState)
 				os.RemoveAll(tmpDir)
-				nodeErr = fmt.Errorf("Node.js process exited: %v: %s", cmd.ProcessState, nodeOut.String())
+				nodeErr = fmt.Errorf("Node.js process exited: %v", cmd.ProcessState)
 				close(nodeReady)
 				return
 			}
@@ -213,7 +254,7 @@ func startNodeProxy() {
 			// Reap Node.js process when it exits.
 			go func() {
 				cmd.Wait()
-				logNode("Node.js server exited. Output:\n%s", nodeOut.String())
+				logNode("Node.js server exited")
 				os.RemoveAll(tmpDir)
 			}()
 			return
@@ -223,10 +264,10 @@ func startNodeProxy() {
 	}
 
 	// Timed out.
-	logNode("Node.js server did not become ready after 120s. Output: %s", nodeOut.String())
+	logNode("Node.js server did not become ready after 120s")
 	cmd.Process.Kill()
 	os.RemoveAll(tmpDir)
-	nodeErr = fmt.Errorf("Node.js did not become ready: %s", nodeOut.String())
+	nodeErr = fmt.Errorf("Node.js did not become ready")
 	close(nodeReady)
 }
 
