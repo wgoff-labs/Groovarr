@@ -42,9 +42,7 @@ func main() {
 	// Load persisted settings (Lidarr URL/key, Discord tokens, etc.) from the database
 	// into the global config so that calls to config.Load() reflect user-saved values
 	// rather than just the environment-variable defaults.
-	if err := config.LoadFromDB(); err != nil {
-		log.Printf("Warning: failed to load settings from DB: %v", err)
-	}
+	config.LoadFromDB()
 
 	// Load persisted settings into config
 	scheduler.LoadPersistedSettings()

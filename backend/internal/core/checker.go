@@ -48,7 +48,7 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 		return nil, nil
 	}
 
-	cfg := config.Load()
+	cfg := config.Load() // always reload so DB changes (settings API) take effect without restart
 	deezer := clients.NewDeezerClient()
 	lidarr, err := clients.NewLidarrClient()
 	if err != nil {

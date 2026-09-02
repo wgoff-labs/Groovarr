@@ -55,6 +55,8 @@ type Config struct {
 var global *Config
 
 // Load returns the global configuration, initializing it from environment variables if needed.
+// It re-reads dynamic settings from the database on every call so changes made via the
+// settings API take effect immediately, without a restart.
 func Load() *Config {
 	if global == nil {
 		global = &Config{
@@ -80,14 +82,18 @@ func Load() *Config {
 			DBSalt:               getEnv("DB_SALT", ""),
 		}
 	}
+
+	// Re-load dynamic settings from DB on every call.
+	loadFromDB()
+
 	return global
 }
 
-// LoadFromDB loads settings from the database and updates the global configuration.
-// It should be called after the database has been initialized.
-func LoadFromDB() error {
+// loadFromDB refreshes dynamic settings from the database into the global config.
+// Assumes the global config has already been initialised. Safe to call repeatedly.
+func loadFromDB() {
 	if global == nil {
-		global = Load()
+		return
 	}
 
 	// Load persistence threshold
@@ -153,8 +159,12 @@ func LoadFromDB() error {
 	if v, err := store.SettingGet("discord_allowed_users"); err == nil && v != "" {
 		global.DiscordAllowedUsers = parseStringSlice(v)
 	}
+}
 
-	return nil
+// LoadFromDB is a public wrapper around loadFromDB for explicit one-time init at startup.
+// In normal operation, config.Load() handles reloading automatically.
+func LoadFromDB() {
+	loadFromDB()
 }
 
 // parseIntSlice parses a comma-separated string of integers.
