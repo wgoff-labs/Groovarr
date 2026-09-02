@@ -75,6 +75,10 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 			store.ArtistUpdateDeezerID(artist.Name, idStr)
 		}
 
+		// Fetch Last.fm popularity data (primary) before processing albums.
+		// Deezer supplements Last.fm gaps via deezerAlbum.TrackPopularities.
+		lastfmScores := GetArtistTrackScores(artist.Name, deezerID)
+
 		// Get releases
 		var albums []clients.AlbumInfo
 		var err error
@@ -124,16 +128,16 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 
 		for _, album := range popular {
 			matched := matchAlbum(album.Name, lidarrAlbums)
-						if matched == nil {
-							store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, int(album.AvgPopularity), false)
-										result.SkippedAlbums = append(result.SkippedAlbums, fmt.Sprintf("%s (not in Lidarr)", album.Name))
+			if matched == nil {
+				store.CheckLogInsert(artist.ID, album.Name, &album.DeezerURL, int(album.AvgPopularity), false)
+				result.SkippedAlbums = append(result.SkippedAlbums, fmt.Sprintf("%s (not in Lidarr)", album.Name))
 				continue
 			}
 
 			if downloadMode == "tracks" {
 				// Per-track 3-state model.
 				hitsKept, hitsFallen, pruned := processTracksThreeState(
-					artist, matched, album, lidarr, cfg.PopularityThreshold, &result,
+					artist, matched, album, lidarr, cfg.PopularityThreshold, lastfmScores, &result,
 				)
 				result.HitsKept += hitsKept
 				result.HitsFallen += hitsFallen
@@ -175,6 +179,7 @@ func processTracksThreeState(
 	deezerAlbum clients.AlbumInfo,
 	lidarr *clients.LidarrClient,
 	threshold int,
+	lastfmScores TrackScores,
 	result *CheckResult,
 ) (hitsKept, hitsFallen, pruned int) {
 	tracks, err := lidarr.GetAlbumTracks(album.ID)
@@ -183,22 +188,24 @@ func processTracksThreeState(
 		return
 	}
 
-	// Map of track name (lower) → score from Deezer/Last.fm popularity.
-	scoreByName := make(map[string]int)
+	// Map of track name (lower) → score from Deezer album tracks (fallback / supplement).
+	deezerScoreByName := make(map[string]int)
 	for _, tp := range deezerAlbum.TrackPopularities {
-		scoreByName[strings.ToLower(strings.TrimSpace(tp.Name))] = tp.Popularity
+		deezerScoreByName[strings.ToLower(strings.TrimSpace(tp.Name))] = tp.Popularity
 	}
-
-	tracksDownloaded := 0
-	tracksPending := 0
-	anyKeepMissing := false
 
 	for _, t := range tracks {
 		key := strings.ToLower(strings.TrimSpace(t.Title))
-		score := scoreByName[key]
+		// Score lookup: Last.fm (primary) → Deezer fallback → default 10.
+		score := lastfmScores.NameScores[key]
+		if score == 0 {
+			if score = deezerScoreByName[key]; score == 0 {
+				score = 10
+			}
+		}
 
 		// Update popularity cache for any future queries.
-		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, "deezer")
+		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, "lastfm")
 
 		state, _ := store.GetTrackPreference(artist.ID, t.ID)
 
@@ -208,7 +215,6 @@ func processTracksThreeState(
 				// Search for this specific track in Lidarr.
 				if err := lidarr.SearchTrack(t.ID); err == nil {
 					result.TracksAdded++
-					anyKeepMissing = true
 				}
 			} else {
 				result.TracksSkipped++
@@ -240,7 +246,6 @@ func processTracksThreeState(
 					// Trigger search; do not set explicit preference.
 					_ = lidarr.SearchTrack(t.ID)
 					result.TracksAdded++
-					anyKeepMissing = true
 				} else {
 					result.TracksSkipped++
 				}
@@ -255,27 +260,8 @@ func processTracksThreeState(
 				}
 			}
 		}
-
-		if t.HasFile {
-			tracksDownloaded++
-		} else {
-			tracksPending++
-		}
 	}
 
-	// Album-level status for the dashboard.
-	switch {
-	case hitsFallen > 0:
-		// Album contains a fallen hit — surface as pending review.
-		// Note: AlbumStatusSet function doesn't exist in store, skipping for now
-	case anyKeepMissing:
-		// Note: AlbumStatusSet function doesn't exist in store, skipping for now
-	case tracksDownloaded > 0:
-		// Note: AlbumStatusSet function doesn't exist in store, skipping for now
-	default:
-		// Note: AlbumStatusSet function doesn't exist in store, skipping for now
-	}
-	_ = tracksPending
 	store.CheckLogInsert(artist.ID, deezerAlbum.Name, &deezerAlbum.DeezerURL, int(deezerAlbum.AvgPopularity), true)
 	result.AlbumsAdded++
 	return

@@ -92,11 +92,10 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if downloadMode == "tracks" {
 			for _, track := range albumTracks {
-				var currentScore *int
 				// State is a plain string (empty = auto/no preference) so the
 				// frontend can compare it with === against 'keep'/'hit'/'not_keep'/''.
-				// A pointer here would serialize as either null or be omitted
-				// entirely, both of which break the React button-active comparisons.
+				// A pointer would serialize as either null or be omitted entirely,
+				// both of which break the React button-active comparisons.
 				trackState := ""
 				if s, ok := trackPrefs[track.ID]; ok {
 					trackState = s
