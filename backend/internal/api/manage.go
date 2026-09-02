@@ -59,8 +59,16 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Track preferences map for all tracks
-	trackPrefs, _ := store.GetTrackPreferences(artistID)
+	// Get track preferences map for all tracks
+		trackPrefs, _ := store.GetTrackPreferences(artistID)
+	
+		// Get cached popularity scores for this artist
+		popularityMap := make(map[int64]int)
+		if pops, err := store.GetTrackPopularity(artistID); err == nil {
+			for _, p := range pops {
+				popularityMap[p.LidarrTrackID] = p.PlayCount
+			}
+		}
 
 	// Build albums response (and collect track counts)
 	albumResponses := make([]AlbumResponse, 0, len(albums))
@@ -102,7 +110,7 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 					DiscNumber:    track.DiscNumber,
 					Duration:      track.Duration,
 					Downloaded:    track.HasFile,
-					CurrentScore:  currentScore,
+					CurrentScore:  func() *int { if s, ok := popularityMap[track.ID]; ok { return &s }; return nil }(),
 					State:         trackState,
 				})
 			}
