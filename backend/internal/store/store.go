@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -30,7 +31,12 @@ func Init(dbPath string) error {
 	// Apply migrations
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
-			return fmt.Errorf("migration failed: %w", err)
+			// SQLite: "duplicate column name" means the column already exists from CREATE TABLE.
+			// This happens on fresh DBs where CREATE TABLE already added track_key.
+			// Only hard-fail on truly unexpected errors.
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("migration failed: %w", err)
+			}
 		}
 	}
 
@@ -116,6 +122,7 @@ var migrations = []string{
 		lidarr_track_id INTEGER NOT NULL,
 		play_count    INTEGER DEFAULT 0,
 		last_played   DATETIME,
+		track_key     TEXT,
 		UNIQUE(artist_id, lidarr_track_id),
 		FOREIGN KEY (artist_id) REFERENCES artists(id)
 	);`,
@@ -128,6 +135,10 @@ var migrations = []string{
 		max_playcount  INTEGER DEFAULT 0,
 		FOREIGN KEY (artist_id) REFERENCES artists(id)
 	);`,
+	// Migration: add track_key to existing track_popularity (2026-09-03)
+	// SQLite ignores this if the column already exists (from CREATE TABLE above).
+	// Safe to re-run on every startup.
+	`ALTER TABLE track_popularity ADD COLUMN track_key TEXT`,
 	// Track actions log (audit)
 	`CREATE TABLE IF NOT EXISTS track_actions (
 		id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -428,7 +439,7 @@ func UpsertTrackPopularity(artistID, lidarrTrackID int64, score int, trackKey st
 // GetTrackPopularity returns track popularity for an artist.
 func GetTrackPopularity(artistID int64) ([]TrackPopularity, error) {
 	rows, err := db.Query(
-		`SELECT lidarr_track_id, play_count, last_played FROM track_popularity WHERE artist_id = ?`,
+		`SELECT lidarr_track_id, play_count, last_played, COALESCE(track_key, '') FROM track_popularity WHERE artist_id = ?`,
 		artistID,
 	)
 	if err != nil {
@@ -439,7 +450,7 @@ func GetTrackPopularity(artistID int64) ([]TrackPopularity, error) {
 	var pops []TrackPopularity
 	for rows.Next() {
 		var tp TrackPopularity
-		if err := rows.Scan(&tp.LidarrTrackID, &tp.PlayCount, &tp.LastPlayed); err != nil {
+		if err := rows.Scan(&tp.LidarrTrackID, &tp.PlayCount, &tp.LastPlayed, &tp.TrackKey); err != nil {
 			return nil, err
 		}
 		pops = append(pops, tp)
@@ -690,6 +701,7 @@ type TrackPopularity struct {
 	LidarrTrackID int64
 	PlayCount     int
 	LastPlayed    *string // nullable
+	TrackKey      string  // normalized track name (for cache reload)
 }
 
 // CheckLogEntry represents a check log entry.

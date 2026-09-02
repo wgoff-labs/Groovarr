@@ -154,7 +154,9 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 			for _, t := range tracks {
 				scored = append(scored, ScoredTrack{
 					LidarrTrackID: t.LidarrTrackID,
+					PlayCount:     int64(t.PlayCount),
 					Score:         t.PlayCount,
+					Source:        t.TrackKey,
 				})
 			}
 			sort.Slice(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
