@@ -208,14 +208,20 @@ func processTracksThreeState(
 
 	for _, t := range tracks {
 		key := strings.ToLower(strings.TrimSpace(t.Title))
-		// Score from Last.fm only; default 10 for truly missing tracks.
+		// Score from Last.fm. Only write to DB if we got a real match;
+		// default-10 tracks are not persisted (upsert ON CONFLICT only updates
+		// existing rows, so skipping them prevents a 42-row hard ceiling on DB entries).
 		var score int
+		var fromLastFM bool
 		if s, ok := lastfmScores.NameScores[key]; ok {
 			score = s
+			fromLastFM = true
 		} else {
 			score = 10
 		}
-		_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, key)
+		if fromLastFM {
+			_ = store.UpsertTrackPopularity(artist.ID, t.ID, score, key)
+		}
 
 		state, _ := store.GetTrackPreference(artist.ID, t.ID)
 
