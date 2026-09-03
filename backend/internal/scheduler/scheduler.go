@@ -53,7 +53,7 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) runDailyCheck(ctx context.Context) {
 	log.Println("Daily check triggered")
 
-	results, err := core.RunDailyCheck("", false)
+	results, err := core.RunDailyCheck("", false, "")
 	if err != nil {
 		log.Printf("Daily check error: %v", err)
 		return
@@ -79,7 +79,7 @@ func (s *Scheduler) runDailyCheck(ctx context.Context) {
 
 // RunNow triggers an immediate check (used by manual trigger endpoints).
 func (s *Scheduler) RunNow(ctx context.Context) (string, string, error) {
-	results, err := core.RunDailyCheck("", false)
+	results, err := core.RunDailyCheck("", false, "")
 	if err != nil {
 		return "", "", err
 	}

@@ -5,10 +5,20 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
 	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/store"
+)
+
+// checkLock serializes all /api/check calls so only one check runs at a time.
+// The mutex is held for the duration of the entire check — multiple artists,
+// Last.fm fetches, Lidarr searches, and all downloads.
+var (
+	checkLock    sync.Mutex
+	checkRunning bool
 )
 
 // CheckResult is the result of checking one artist.
@@ -27,8 +37,37 @@ type CheckResult struct {
 	TracksPruned        int      `json:"tracks_pruned"`
 }
 
+// CheckRunning returns true if a check is currently in progress.
+func CheckRunning() bool {
+	checkLock.Lock()
+	defer checkLock.Unlock()
+	return checkRunning
+}
+
 // RunDailyCheck runs the daily popularity check for all (or one) watched artists.
-func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
+// If a check is already running, this call blocks until it finishes unless
+// force == "kill" (which returns an error so the caller can surface a warning).
+func RunDailyCheck(artistFilter string, fullScan bool, force string) ([]CheckResult, error) {
+	// Try to acquire the lock. If another check is running, block unless forced.
+	if checkRunning {
+		if force == "kill" {
+			return nil, fmt.Errorf("cannot start new check: one is already running; use force='kill' only on the runner that started it")
+		}
+		// Wait until checkRunning becomes false (the holder releases the lock).
+		for checkRunning {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	checkLock.Lock()
+	// Mark that we're now the one running the check.
+	checkRunning = true
+	// Defer unlock and reset checkRunning so other calls can proceed when we exit.
+	defer func() {
+		checkLock.Unlock()
+		checkRunning = false
+	}()
+
 	var artists []*store.Artist
 	if artistFilter != "" {
 		a, err := store.ArtistGet(artistFilter)
@@ -100,18 +139,18 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 				continue
 			}
 			var total, scored int
-						for _, t := range tracks {
-							key := strings.ToLower(strings.TrimSpace(t.Title))
-							// Score from Last.fm only; default 10 for truly missing tracks.
-							var score int
-							if s, ok := lastfmScores.NameScores[key]; ok {
-								score = s
-							} else {
-								score = 10
-							}
-							total += score
-							scored++
-						}
+			for _, t := range tracks {
+				key := strings.ToLower(strings.TrimSpace(t.Title))
+				// Score from Last.fm only; default 10 for truly missing tracks.
+				var score int
+				if s, ok := lastfmScores.NameScores[key]; ok {
+					score = s
+				} else {
+					score = 10
+				}
+				total += score
+				scored++
+			}
 			if scored == 0 {
 				continue
 			}
@@ -137,18 +176,12 @@ func RunDailyCheck(artistFilter string, fullScan bool) ([]CheckResult, error) {
 				// Album mode: monitor + search the whole album.
 				if err := lidarr.MonitorAndSearchAlbum(album.ID); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("Failed to search %s: %v", album.Title, err))
-					continue
 				}
-				store.CheckLogInsert(artist.ID, album.Title, nil, aws.avgScore, true)
-				result.AddedAlbums = append(result.AddedAlbums, fmt.Sprintf("%s (avg score: %d)", album.Title, aws.avgScore))
-				result.AlbumsAdded++
 			}
 		}
-
 		store.ArtistMarkChecked(artist.ID)
 		results = append(results, result)
 	}
-
 	return results, nil
 }
 

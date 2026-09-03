@@ -66,6 +66,7 @@ func main() {
 	mux.HandleFunc("/api/folders", api.FoldersHandler)
 	mux.HandleFunc("/api/profiles", api.ProfilesHandler)
 	mux.HandleFunc("/api/check", api.CheckHandler)
+	mux.HandleFunc("/api/check/status", api.CheckStatusHandler)
 	mux.HandleFunc("/api/scan", api.ScanHandler)
 	mux.HandleFunc("/api/prune", api.PruneHandler)
 	mux.HandleFunc("/api/settings", api.SettingsHandler)

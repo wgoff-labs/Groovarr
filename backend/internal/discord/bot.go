@@ -228,7 +228,7 @@ type CommandContext struct {
 }
 
 func (b *Bot) runCheck(ctx *CommandContext) {
-	results, err := core.RunDailyCheck("", false)
+	results, err := core.RunDailyCheck("", false, "")
 	if err != nil {
 		b.reply(ctx, fmt.Sprintf("❌ Check failed: %v", err))
 		return

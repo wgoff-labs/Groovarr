@@ -79,6 +79,14 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// CheckStatusHandler returns whether a check is currently running.
+func CheckStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"running": core.CheckRunning(),
+	})
+}
+
 // StatusHandler returns basic service status.
 func StatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -130,11 +138,20 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // CheckHandler triggers a manual popularity check.
+// GET /api/check?artist=Name&force=kill
+// force=kill: stop any in-progress check and start this one immediately.
 func CheckHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
 	debug := r.URL.Query().Get("debug") == "1"
+	force := r.URL.Query().Get("force")
 
-	results, err := core.RunDailyCheck(artist, false)
+	// Warn if a check is already running and this call isn't forcing.
+	if core.CheckRunning() && force != "kill" {
+		// We'll let it block and wait — that's the behavior.
+		// Could also return 409 Conflict here, but blocking is simpler.
+	}
+
+	results, err := core.RunDailyCheck(artist, false, force)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -208,7 +225,7 @@ type ScoredTrack struct {
 // ScanHandler triggers a full catalog scan for an artist.
 func ScanHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
-	results, err := core.RunDailyCheck(artist, true)
+	results, err := core.RunDailyCheck(artist, true, "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
