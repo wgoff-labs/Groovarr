@@ -42,3 +42,4 @@ frontend/tsconfig.tsbuildinfo
 
 # Code audit (gitignored, local only)
 CODE_REVIEW.md
+TODO.md
