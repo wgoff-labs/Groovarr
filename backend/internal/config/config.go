@@ -254,3 +254,9 @@ func Get() Config {
 	}
 	return *global
 }
+
+// Reset clears the global config singleton. This is intended for testing
+// only, so that env vars can be re-read on the next Load() call.
+func Reset() {
+	global = nil
+}

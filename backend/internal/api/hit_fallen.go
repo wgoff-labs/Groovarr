@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
@@ -50,7 +51,7 @@ func HitFallenHandler(w http.ResponseWriter, r *http.Request) {
 		LIMIT ?
 	`, limit)
 	if err != nil {
-		http.Error(w, "Failed to fetch hit-fallen logs", http.StatusInternalServerError)
+		http.Error(w, "Failed to fetch hit-fallen logs: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -69,13 +70,13 @@ func HitFallenHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var r rowData
 		if err := rows.Scan(&r.id, &r.scoreAtFall, &r.fallenAt, &r.artistID, &r.lidarrTrackID, &r.trackName, &r.artistName); err != nil {
-			http.Error(w, "Failed to scan hit-fallen log row", http.StatusInternalServerError)
+			http.Error(w, "Failed to scan hit-fallen log row: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		raw = append(raw, r)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, "Error iterating hit-fallen logs", http.StatusInternalServerError)
+		http.Error(w, "Error iterating hit-fallen logs: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 

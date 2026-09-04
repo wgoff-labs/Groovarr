@@ -44,9 +44,6 @@ func main() {
 	// rather than just the environment-variable defaults.
 	config.LoadFromDB()
 
-	// Load persisted settings into config
-	scheduler.LoadPersistedSettings()
-
 	// Create HTTP mux
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/artists", api.ArtistHandler)
@@ -79,11 +76,14 @@ func main() {
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"version": Version, "build": BuildNumber})
 	})
+	// Wrap the API mux with auth middleware (applies to all /api/ routes)
+	authMux := api.AuthMiddleware(mux)
+
 	// Go's http.ServeMux uses longest-prefix match, so "/" only matches "/" not "/artists".
 	// We need to use a custom handler that routes API vs frontend.
 	mainHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
-			mux.ServeHTTP(w, r)
+			authMux.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/_debug/") {

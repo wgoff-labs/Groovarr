@@ -20,6 +20,11 @@ func TestMain(m *testing.M) {
 	if err := store.Init(":memory:"); err != nil {
 		panic(err)
 	}
+	// Create an artist since track_preferences has a FK constraint on artist_id
+	_, err := store.ArtistAdd("Test Artist", "deezer1", 1, "/root", "test")
+	if err != nil {
+		panic(err)
+	}
 	// Note: store.Init creates the schema; we do not need to migrate.
 	code := m.Run()
 	os.Exit(code)
@@ -35,6 +40,7 @@ type trackStateRequest struct {
 func makeStateReq(t *testing.T, state string) *http.Request {
 	t.Helper()
 	body, _ := json.Marshal(trackStateRequest{State: state})
+	// Artist ID must be 1 because that's what we inserted in TestMain
 	req := httptest.NewRequest(http.MethodPost, "/api/artist/1/track/99/state", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
@@ -144,7 +150,7 @@ func TestTrackStateHandler_InvalidJSON(t *testing.T) {
 	// panic or return 500.
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/artist/1/track/1/state",
-		bytes.NewReader([]byte(`{not json at all`))
+		bytes.NewReader([]byte(`{not json at all`)),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	TrackStateHandler(rr, req)

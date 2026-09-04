@@ -39,3 +39,6 @@ yarn-debug.log*
 # OS
 Thumbs.db
 frontend/tsconfig.tsbuildinfo
+
+# Code audit (gitignored, local only)
+CODE_REVIEW.md

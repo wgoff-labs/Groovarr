@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
-	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/discord"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
@@ -202,17 +201,7 @@ func (m *Manager) ConnectDiscord() {
 		return
 	}
 
-	cfg := config.Load()
-
-	bot, err := discord.New(discordToken, func(report string) {
-		if cfg.DiscordHomeChannel != 0 {
-			if b := discord.GetBot(); b != nil {
-				if err := b.SendReport(report); err != nil {
-					log.Printf("[discord] report send failed: %v", err)
-				}
-			}
-		}
-	})
+	bot, err := discord.New(discordToken)
 	if err != nil {
 		m.setStatus(ServiceDiscord, StatusError, err.Error())
 		m.log("error", ServiceDiscord, fmt.Sprintf("Discord bot creation failed: %v", err))

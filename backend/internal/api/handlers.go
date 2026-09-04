@@ -18,7 +18,7 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		artists, err := store.ArtistList()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -29,23 +29,23 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 			Name       string `json:"name"`
 			RootFolder string `json:"root_folder"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+		if err := ValidateJSON(r, &req); err != nil {
+			BadRequest(w, "invalid request: "+config.SanitizeError(err.Error()))
 			return
 		}
 		if req.Name == "" {
-			http.Error(w, "name is required", http.StatusBadRequest)
+			BadRequest(w, "name is required")
 			return
 		}
 		addedBy := "manual"
 		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy)
 		if err != nil {
-			http.Error(w, "failed to add artist: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to add artist: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		artist, err := store.ArtistGetByID(id)
 		if err != nil {
-			http.Error(w, "artist added but failed to fetch: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "artist added but failed to fetch: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -55,12 +55,12 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name string `json:"name"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
+		if err := ValidateJSON(r, &req); err != nil {
+			BadRequest(w, "invalid request: "+config.SanitizeError(err.Error()))
 			return
 		}
 		if req.Name == "" {
-			http.Error(w, "name is required", http.StatusBadRequest)
+			BadRequest(w, "name is required")
 			return
 		}
 		artist, err := store.ArtistGet(req.Name)
@@ -69,7 +69,7 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := store.ArtistDelete(artist.ID); err != nil {
-			http.Error(w, "failed to remove artist: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to remove artist: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -105,12 +105,12 @@ func FoldersHandler(w http.ResponseWriter, r *http.Request) {
 		if WriteLidarrUnavailable(w, cm) {
 			return
 		}
-		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, "Lidarr not connected: "+config.SanitizeError(err.Error()), http.StatusServiceUnavailable)
 		return
 	}
 	folders, err := c.GetRootFolders()
 	if err != nil {
-		http.Error(w, "Lidarr unreachable: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "Lidarr unreachable: "+config.SanitizeError(err.Error()), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -125,12 +125,12 @@ func ProfilesHandler(w http.ResponseWriter, r *http.Request) {
 		if WriteLidarrUnavailable(w, cm) {
 			return
 		}
-		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, "Lidarr not connected: "+config.SanitizeError(err.Error()), http.StatusServiceUnavailable)
 		return
 	}
 	profiles, err := c.GetQualityProfiles()
 	if err != nil {
-		http.Error(w, "Lidarr unreachable: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "Lidarr unreachable: "+config.SanitizeError(err.Error()), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -153,7 +153,7 @@ func CheckHandler(w http.ResponseWriter, r *http.Request) {
 
 	results, err := core.RunDailyCheck(artist, false, force)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 
@@ -227,7 +227,7 @@ func ScanHandler(w http.ResponseWriter, r *http.Request) {
 	artist := r.URL.Query().Get("artist")
 	results, err := core.RunDailyCheck(artist, true, "")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -240,7 +240,7 @@ func PruneHandler(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("force") == "true"
 	results, err := core.PruneDownloadedAlbums(artist, force)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -264,12 +264,12 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			Key   string `json:"key"`
 			Value string `json:"value"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if err := ValidateJSON(r, &req); err != nil {
+			BadRequest(w, config.SanitizeError(err.Error()))
 			return
 		}
 		if err := store.SettingUpdate(req.Key, req.Value); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		// Reload Discord bot settings if a discord-related key was saved
@@ -323,7 +323,7 @@ func KeepHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := store.NeverPruneInsert(a.ID, album, track); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -333,7 +333,7 @@ func KeepHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := store.NeverPruneDelete(a.ID, album, track); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -346,7 +346,7 @@ func KeepHandler(w http.ResponseWriter, r *http.Request) {
 func DownloadStatusHandler(w http.ResponseWriter, r *http.Request) {
 	results, err := core.CheckDownloads()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

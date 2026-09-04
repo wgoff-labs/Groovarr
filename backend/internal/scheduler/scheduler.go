@@ -8,7 +8,6 @@ import (
 
 	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/core"
-	"github.com/groovarr/groovarr/backend/internal/store"
 	"github.com/robfig/cron/v3"
 )
 
@@ -92,16 +91,6 @@ func (s *Scheduler) RunNow(ctx context.Context) (string, string, error) {
 	}
 
 	return report, pruneReport, nil
-}
-
-// LoadPersistedSettings reloads threshold and mode from DB into config on startup.
-func LoadPersistedSettings() {
-	if v, _ := store.SettingGet("popularity_threshold"); v != "" {
-		if i, err := strconv.Atoi(v); err == nil && i > 0 {
-			cfg := config.Load()
-			cfg.PopularityThreshold = i
-		}
-	}
 }
 
 func formatCheckReport(results []core.CheckResult) string {

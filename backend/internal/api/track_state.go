@@ -49,8 +49,8 @@ func TrackStateHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		State string `json:"state"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := ValidateJSON(r, &req); err != nil {
+		BadRequest(w, "Invalid request body")
 		return
 	}
 	// Validate state — allow empty string to reset to auto (auto = no preference)
@@ -98,6 +98,7 @@ func filter(s []string, f func(string) bool) []string {
 func hasPrefixTS(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
+// hasSuffixTS checks if s ends with the given suffix.
 func hasSuffixTS(s, suffix string) bool {
-	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+	return strings.HasSuffix(s, suffix)
 }

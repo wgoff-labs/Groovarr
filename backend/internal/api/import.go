@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/groovarr/groovarr/backend/internal/config"
 	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
@@ -47,7 +48,7 @@ func ArtistImportHandler(w http.ResponseWriter, r *http.Request) {
 		if WriteLidarrUnavailable(w, cm) {
 			return
 		}
-		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, "Lidarr not connected: "+config.SanitizeError(err.Error()), http.StatusServiceUnavailable)
 		return
 	}
 
@@ -68,7 +69,7 @@ func ArtistImportHandler(w http.ResponseWriter, r *http.Request) {
 	// Get all Lidarr artists
 	lidarrArtists, err := c.GetAllArtists()
 	if err != nil {
-		http.Error(w, "Failed to fetch Lidarr artists: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "Failed to fetch Lidarr artists: "+config.SanitizeError(err.Error()), http.StatusBadGateway)
 		return
 	}
 
@@ -159,8 +160,26 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req BulkImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	if err := ValidateJSON(r, &req); err != nil {
+		BadRequest(w, "invalid request body: "+config.SanitizeError(err.Error()))
+		return
+	}
+
+	// Validate required fields
+	if len(req.ArtistIDs) == 0 {
+		BadRequest(w, "artistIds is required")
+		return
+	}
+	if req.QualityProfileID <= 0 {
+		BadRequest(w, "qualityProfileId is required and must be > 0")
+		return
+	}
+	if req.RootFolder == "" {
+		BadRequest(w, "rootFolder is required")
+		return
+	}
+	if req.Monitor == "" {
+		BadRequest(w, "monitor is required")
 		return
 	}
 
@@ -170,7 +189,7 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 		if WriteLidarrUnavailable(w, cm) {
 			return
 		}
-		http.Error(w, "Lidarr not connected: "+err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, "Lidarr not connected: "+config.SanitizeError(err.Error()), http.StatusServiceUnavailable)
 		return
 	}
 
@@ -188,13 +207,13 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 	for _, lidarrIDRaw := range req.ArtistIDs {
 		lidarrID, err := strconv.ParseInt(string(lidarrIDRaw), 10, 64)
 		if err != nil {
-			errs = append(errs, "invalid artist ID "+string(lidarrIDRaw)+": "+err.Error())
+			errs = append(errs, "invalid artist ID "+string(lidarrIDRaw)+": "+config.SanitizeError(err.Error()))
 			continue
 		}
 		// Get artist from Lidarr
 		artist, err := c.GetArtist(lidarrID)
 		if err != nil {
-			errs = append(errs, "Lidarr ID "+strconv.FormatInt(lidarrID, 10)+": "+err.Error())
+			errs = append(errs, "Lidarr ID "+strconv.FormatInt(lidarrID, 10)+": "+config.SanitizeError(err.Error()))
 			continue
 		}
 
@@ -214,7 +233,7 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 		// Add to Groovarr
 		addedBy := "lidarr_import"
 		if _, err := store.ArtistAdd(artist.ArtistName, "", lidarrID, rootFolder, addedBy); err != nil {
-			errs = append(errs, artist.ArtistName+": "+err.Error())
+			errs = append(errs, artist.ArtistName+": "+config.SanitizeError(err.Error()))
 			continue
 		}
 
@@ -229,7 +248,7 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 			artist.Monitored = req.Monitor == "all" || req.Monitor == "albums"
 			if err := c.UpdateArtist(artist); err != nil {
 				// Non-fatal: log but continue
-				errs = append(errs, artist.ArtistName+" (monitor update failed): "+err.Error())
+				errs = append(errs, artist.ArtistName+" (monitor update failed): "+config.SanitizeError(err.Error()))
 			}
 		}
 

@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/groovarr/groovarr/backend/internal/clients"
-	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/config"
+	"github.com/groovarr/groovarr/backend/internal/connections"
 	"github.com/groovarr/groovarr/backend/internal/store"
 )
 
@@ -48,14 +48,14 @@ func ArtistManageHandler(w http.ResponseWriter, r *http.Request) {
 		if WriteLidarrUnavailable(w, mgr) {
 			return
 		}
-		http.Error(w, "Lidarr not configured", http.StatusServiceUnavailable)
+		http.Error(w, "Lidarr not configured: "+config.SanitizeError(err.Error()), http.StatusServiceUnavailable)
 		return
 	}
 
 	// Fetch albums from Lidarr
 	albums, err := lidarrClient.GetArtistAlbums(derefPtr(artist.LidarrID))
 	if err != nil {
-		http.Error(w, "Failed to fetch albums from Lidarr", http.StatusInternalServerError)
+		http.Error(w, "Failed to fetch albums from Lidarr: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 		return
 	}
 

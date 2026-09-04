@@ -29,11 +29,10 @@ type Bot struct {
 	allowUsers  map[string]struct{}
 	allowAll    bool
 	autoThread  bool
-	reportFn    func(string)
 }
 
 // New creates a new Discord bot.
-func New(token string, reportFn func(string)) (*Bot, error) {
+func New(token string) (*Bot, error) {
 	cfg := config.Load()
 	allowChans := make(map[snowflake.ID]struct{}, len(cfg.DiscordAllowedChans))
 	for _, id := range cfg.DiscordAllowedChans {
@@ -50,7 +49,6 @@ func New(token string, reportFn func(string)) (*Bot, error) {
 		allowUsers:    allowUsers,
 		allowAll:      cfg.DiscordAllowAllUsers,
 		autoThread:    cfg.DiscordAutoThread,
-		reportFn:      reportFn,
 	}
 
 	client, err := disgo.New(token,
