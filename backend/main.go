@@ -39,6 +39,9 @@ func main() {
 	}
 	defer store.Close()
 
+	// Reconcile environment variables to database on first run
+	config.ReconcileEnvToDB()
+
 	// Load persisted settings (Lidarr URL/key, Discord tokens, etc.) from the database
 	// into the global config so that calls to config.Load() reflect user-saved values
 	// rather than just the environment-variable defaults.

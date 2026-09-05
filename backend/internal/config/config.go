@@ -172,6 +172,40 @@ func LoadFromDB() {
 	loadFromDB()
 }
 
+// ReconcileEnvToDB writes environment variable values to the database if the
+// corresponding setting doesn't already exist. This ensures .env credentials
+// are persisted to the DB and available via the Settings API on first run.
+func ReconcileEnvToDB() {
+	if store.GetDB() == nil {
+		return
+	}
+
+	// Helper: write if key missing
+	writeIfMissing := func(key, envKey string) {
+		if v, err := store.SettingGet(key); err == nil && v != "" {
+			return // already in DB
+		}
+		if envVal := os.Getenv(envKey); envVal != "" {
+			_ = store.SettingUpdate(key, envVal)
+		}
+	}
+
+	writeIfMissing("lidarr_url", "LIDARR_URL")
+	writeIfMissing("lidarr_api_key", "LIDARR_API_KEY")
+	writeIfMissing("lidarr_quality_profile", "LIDARR_QUALITY_PROFILE")
+	writeIfMissing("lidarr_default_root_folder", "LIDARR_DEFAULT_ROOT_FOLDER")
+	writeIfMissing("lastfm_api_key", "LASTFM_API_KEY")
+	writeIfMissing("popularity_threshold", "POPULARITY_THRESHOLD")
+	writeIfMissing("download_mode", "DOWNLOAD_MODE")
+	writeIfMissing("daily_check_cron", "DAILY_CHECK_CRON")
+	writeIfMissing("timezone", "TIMEZONE")
+	writeIfMissing("discord_home_channel", "DISCORD_HOME_CHANNEL")
+	writeIfMissing("discord_allow_users", "DISCORD_ALLOW_ALL_USERS")
+	writeIfMissing("discord_auto_thread", "DISCORD_AUTO_THREAD")
+	writeIfMissing("discord_allowed_channels", "DISCORD_ALLOWED_CHANNELS")
+	writeIfMissing("discord_allowed_users", "DISCORD_ALLOWED_USERS")
+}
+
 // parseIntSlice parses a comma-separated string of integers.
 func parseIntSlice(s string) []int64 {
 	parts := strings.Split(s, ",")
