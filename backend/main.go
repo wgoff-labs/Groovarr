@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/groovarr/groovarr/backend/internal/frontend"
 	"github.com/groovarr/groovarr/backend/internal/scheduler"
 	"github.com/groovarr/groovarr/backend/internal/store"
+	"github.com/groovarr/groovarr/backend/internal/clients"
 )
 
 // Version and BuildNumber are set at build time via -ldflags.
@@ -42,10 +44,28 @@ func main() {
 	// Reconcile environment variables to database on first run
 	config.ReconcileEnvToDB()
 
-	// Load persisted settings (Lidarr URL/key, Discord tokens, etc.) from the database
-	// into the global config so that calls to config.Load() reflect user-saved values
-	// rather than just the environment-variable defaults.
+	// Load persisted settings (Lidarr URL/key, Discord tokens, etc.)
+	// into the global config so that calls to config.Load() reflect user-saved
+	// values rather than just the environment-variable defaults.
 	config.LoadFromDB()
+
+	// On a clean database initialization, fetch the first available Lidarr quality
+	// profile and root folder from the Lidarr API and write them to the settings
+	// table so bootstrap works without manual config.
+	if store.GetDB() != nil {
+		qpVal, qpErr := store.SettingGet("lidarr_quality_profile")
+		if qpErr != nil || qpVal == "" {
+			if err := fetchLidarrQualityProfileToDB(); err != nil {
+				log.Printf("[config] warning: failed to fetch Lidarr quality profile: %v", err)
+			}
+		}
+		rfVal, rfErr := store.SettingGet("lidarr_default_root_folder")
+		if rfErr != nil || rfVal == "" {
+			if err := fetchLidarrDefaultRootFolderToDB(); err != nil {
+				log.Printf("[config] warning: failed to fetch Lidarr default root folder: %v", err)
+			}
+		}
+	}
 
 	// Create HTTP mux
 	mux := http.NewServeMux()
@@ -159,8 +179,63 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
-
 	log.Println("Groovarr stopped")
+}
+
+// fetchLidarrQualityProfileToDB fetches the first available Lidarr quality profile
+// from the Lidarr API and writes its ID to the settings table.
+func fetchLidarrQualityProfileToDB() error {
+	url, err := store.SettingGet("lidarr_url")
+	if err != nil || url == "" {
+		return fmt.Errorf("lidarr URL not configured")
+	}
+	key, err := store.SettingGet("lidarr_api_key")
+	if err != nil || key == "" {
+		return fmt.Errorf("lidarr API key not configured")
+	}
+
+	c, err := clients.NewLidarrClientWith(url, key)
+	if err != nil {
+		return fmt.Errorf("failed to create Lidarr client: %w", err)
+	}
+
+	profiles, err := c.GetQualityProfiles()
+	if err != nil {
+		return fmt.Errorf("failed to fetch quality profiles from Lidarr: %w", err)
+	}
+	if len(profiles) == 0 {
+		return fmt.Errorf("no quality profiles found in Lidarr")
+	}
+
+	return store.SettingUpdate("lidarr_quality_profile", fmt.Sprintf("%d", profiles[0].ID))
+}
+
+// fetchLidarrDefaultRootFolderToDB fetches the first available Lidarr root folder
+// from the Lidarr API and writes its path to the settings table.
+func fetchLidarrDefaultRootFolderToDB() error {
+	url, err := store.SettingGet("lidarr_url")
+	if err != nil || url == "" {
+		return fmt.Errorf("lidarr URL not configured")
+	}
+	key, err := store.SettingGet("lidarr_api_key")
+	if err != nil || key == "" {
+		return fmt.Errorf("lidarr API key not configured")
+	}
+
+	c, err := clients.NewLidarrClientWith(url, key)
+	if err != nil {
+		return fmt.Errorf("failed to create Lidarr client: %w", err)
+	}
+
+	folders, err := c.GetRootFolders()
+	if err != nil {
+		return fmt.Errorf("failed to fetch root folders from Lidarr: %w", err)
+	}
+	if len(folders) == 0 {
+		return fmt.Errorf("no root folders found in Lidarr")
+	}
+
+	return store.SettingUpdate("lidarr_default_root_folder", folders[0].Path)
 }
 
 // corsMiddleware adds CORS headers for local development.
