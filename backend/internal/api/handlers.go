@@ -248,8 +248,8 @@ func PruneHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // SetupHandler handles the initial setup page.
-// GET /api/setup → returns the setup form HTML
-// POST /api/setup → saves auth credentials to the database and redirects
+// GET /api/setup → returns the setup form HTML or redirects if already configured
+// POST /api/setup → saves auth credentials to the database and returns JSON success
 func SetupHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -265,13 +265,12 @@ func SetupHandler(w http.ResponseWriter, r *http.Request) {
 		setupHTML := `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Groovarr Initial Setup</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background: #0d1117; color: #e8e8e8; }
-        .max-w-2xl { max-width: 24rem; }
-        margin auto; }
+        .max-w-2xl { max-width: 24rem; margin auto; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 2rem; margin-bottom: 1rem; }
         input { width: 100%; padding: 0.5rem; margin-bottom: 1rem; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #e8e8e8; }
         button { width: 100%; padding: 0.75rem; background: #e8e8e8; color: #0d1117; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
@@ -299,7 +298,7 @@ func SetupHandler(w http.ResponseWriter, r *http.Request) {
         </div>
     </div>
 </body>
-</html>`
+</html>`;
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(setupHTML))
 	case http.MethodPost:
@@ -328,15 +327,13 @@ func SetupHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Also update the .env file for persistence (optional, but DB is preferred)
-		// The .env file will be updated on next startup to reflect DB values
-
-		// Redirect to dashboard
-		w.Header().Set("Location", "/")
-		w.WriteHeader(http.StatusFound)
+		// Return JSON success so the frontend can navigate to / (dashboard) properly
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ok": true}`))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
 }
 
 // SettingsHandler gets or sets simple settings.
