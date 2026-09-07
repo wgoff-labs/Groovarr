@@ -38,7 +38,7 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		addedBy := "manual"
-		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy)
+		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy, 0)
 		if err != nil {
 			http.Error(w, "failed to add artist: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
