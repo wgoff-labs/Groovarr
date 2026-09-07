@@ -19,20 +19,21 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check if this request path starts with /api/
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			next.ServeHTTP(w, r)
+		// Check if auth is configured BEFORE checking the request path.
+		// If not configured, redirect ALL routes to setup page instead of
+		// triggering the native browser Basic Auth popup.
+		cfg := config.Load()
+		if cfg.AuthUsername == "" || cfg.AuthPassword == "" {
+			// No auth configured — redirect to setup page for ALL routes
+			w.Header().Set("Location", "/api/setup")
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 
-		// Check if auth is configured before challenging for credentials.
-		// If not configured, redirect to setup page instead of triggering
-		// the native browser Basic Auth popup.
-		cfg := config.Load()
-		if cfg.AuthUsername == "" || cfg.AuthPassword == "" {
-			// No auth configured — redirect to setup page
-			w.Header().Set("Location", "/api/setup")
-			w.WriteHeader(http.StatusFound)
+		// Check if this request path starts with /api/
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			// Auth is configured, but this is a non-API route — allow through
+			next.ServeHTTP(w, r)
 			return
 		}
 
