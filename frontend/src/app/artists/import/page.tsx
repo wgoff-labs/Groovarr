@@ -103,6 +103,10 @@ export default function ArtistImportPage() {
       return;
     }
 
+    // Get quality profile ID from the first selected artist
+    const firstArtist = artists.find(a => selectedIds.has(a.lidarrId));
+    const qualityProfileId = firstArtist?.qualityProfileId ?? 0;
+
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
@@ -110,6 +114,7 @@ export default function ArtistImportPage() {
     try {
       const result = await api.artists.importBulk({
         artistIds: Array.from(selectedIds),
+        qualityProfileId: qualityProfileId,
       });
 
       if (result.imported > 0) {

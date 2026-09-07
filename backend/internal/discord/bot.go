@@ -261,7 +261,7 @@ func (b *Bot) runAdd(ctx *CommandContext, name string) {
 		rootFolder = "Warren's Music"
 	}
 	addedBy := ctx.event.Message.Author.Username
-	if _, err := store.ArtistAdd(name, "", 0, rootFolder, addedBy); err != nil {
+	if _, err := store.ArtistAdd(name, "", 0, rootFolder, addedBy, 0); err != nil {
 		b.reply(ctx, fmt.Sprintf("❌ Failed to add artist: %v", err))
 		return
 	}

@@ -61,8 +61,9 @@ var migrations = []string{
 		root_folder     TEXT,
 		added_by        TEXT,
 		added_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-		last_checked    DATETIME
-	);`,
+		last_checked    DATETIME,
+		quality_profile_id INTEGER
+	)`,
 	// Settings table (key-value store)
 	`CREATE TABLE IF NOT EXISTS settings (
 		key   TEXT PRIMARY KEY,
@@ -164,22 +165,23 @@ var migrations = []string{
 
 // Artist represents an artist in the watchlist.
 type Artist struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	DeezID      string `json:"deezer_id"`
-	LidarrID    *int64 `json:"lidarr_id"`
-	RootFolder  string `json:"root_folder"`
-	AddedBy     string `json:"added_by"`
-	AddedAt     string `json:"added_at"`
-	LastChecked *string `json:"last_checked"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	DeezID        string `json:"deezer_id"`
+	LidarrID      *int64 `json:"lidarr_id"`
+	RootFolder    string `json:"root_folder"`
+	AddedBy       string `json:"added_by"`
+	AddedAt       string `json:"added_at"`
+	LastChecked   *string `json:"last_checked"`
+	QualityProfileID int64 `json:"qualityProfileId"`
 }
 
 // ArtistAdd adds a new artist to the watchlist.
 // Returns the new artist ID and an error if any.
-func ArtistAdd(name, deezerID string, lidarrID int64, rootFolder, addedBy string) (int64, error) {
+func ArtistAdd(name, deezerID string, lidarrID int64, rootFolder, addedBy string, qualityProfileID int64) (int64, error) {
 	result, err := db.Exec(
-		`INSERT INTO artists (name, deezer_id, lidarr_id, root_folder, added_by) VALUES (?, ?, ?, ?, ?)`,
-		name, deezerID, lidarrID, rootFolder, addedBy,
+		`INSERT INTO artists (name, deezer_id, lidarr_id, root_folder, added_by, quality_profile_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		name, deezerID, lidarrID, rootFolder, addedBy, qualityProfileID,
 	)
 	if err != nil {
 		return 0, err
@@ -195,18 +197,20 @@ func ArtistAdd(name, deezerID string, lidarrID int64, rootFolder, addedBy string
 // Returns the artist and an error if not found.
 func ArtistGet(name string) (*Artist, error) {
 	row := db.QueryRow(
-		`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at, last_checked FROM artists WHERE name = ?`,
+		`SELECT id, name, deezer_id, lidarr_id, root_folder, added_by, added_at, last_checked, quality_profile_id FROM artists WHERE name = ?`,
 		name,
 	)
 	var a Artist
 	var lidarrID *int64
 	var lastChecked *string
-	err := row.Scan(&a.ID, &a.Name, &a.DeezID, &lidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt, &lastChecked)
+	var qualityProfileID int64
+	err := row.Scan(&a.ID, &a.Name, &a.DeezID, &lidarrID, &a.RootFolder, &a.AddedBy, &a.AddedAt, &lastChecked, &qualityProfileID)
 	if err != nil {
 		return nil, err
 	}
 	a.LidarrID = lidarrID
 	a.LastChecked = lastChecked
+	a.QualityProfileID = qualityProfileID
 	return &a, nil
 }
 

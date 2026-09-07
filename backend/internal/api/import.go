@@ -232,7 +232,7 @@ func ArtistImportBulkHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Add to Groovarr
 		addedBy := "lidarr_import"
-		if _, err := store.ArtistAdd(artist.ArtistName, "", lidarrID, rootFolder, addedBy); err != nil {
+		if _, err := store.ArtistAdd(artist.ArtistName, "", lidarrID, rootFolder, addedBy, int64(req.QualityProfileID)); err != nil {
 			errs = append(errs, artist.ArtistName+": "+config.SanitizeError(err.Error()))
 			continue
 		}

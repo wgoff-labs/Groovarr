@@ -13,9 +13,26 @@ import (
 // AuthMiddleware is the exported version for wiring in main.go.
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow /api/setup to be accessed when auth is not yet configured
+		if strings.HasPrefix(r.URL.Path, "/api/setup") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Check if this request path starts with /api/
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if auth is configured before challenging for credentials.
+		// If not configured, redirect to setup page instead of triggering
+		// the native browser Basic Auth popup.
+		cfg := config.Load()
+		if cfg.AuthUsername == "" || cfg.AuthPassword == "" {
+			// No auth configured — redirect to setup page
+			w.Header().Set("Location", "/api/setup")
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 
@@ -54,9 +71,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		password := cred[1]
 
 		// Validate against config
-		cfg := config.Load()
 		if cfg.AuthUsername == "" || cfg.AuthPassword == "" {
-			// No auth configured — allow through
+			// No auth configured — allow through (for initial setup flow)
 			next.ServeHTTP(w, r)
 			return
 		}

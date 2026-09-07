@@ -20,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
             <Link href="/artists" className="hover:text-white transition-colors">Artists</Link>
             <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+            <Link href="/setup" className="hover:text-white transition-colors">Setup</Link>
           </nav>
         </header>
         <main className="p-6 max-w-6xl mx-auto">{children}</main>

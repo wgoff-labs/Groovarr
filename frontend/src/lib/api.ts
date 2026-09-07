@@ -294,4 +294,9 @@ export const api = {
   },
 
   version: () => fetchJSON<{ version: string; commit: string; build: string }>('/api/version'),
+
+  setup: {
+    checkConfigured: () =>
+      fetchJSON<{ configured: boolean }>('/api/setup'),
+  },
 };

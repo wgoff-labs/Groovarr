@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	// Create an artist since track_preferences has a FK constraint on artist_id
-	_, err := store.ArtistAdd("Test Artist", "deezer1", 1, "/root", "test")
+	_, err := store.ArtistAdd("Test Artist", "deezer1", 1, "/root", "test", 0)
 	if err != nil {
 		panic(err)
 	}
