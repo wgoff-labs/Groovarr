@@ -178,6 +178,14 @@ async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
       ...opts?.headers,
     },
   });
+
+  if (res.headers.get('Content-Type')?.includes('text/html')) {
+    if (typeof window !== 'undefined') {
+        window.location.href = '/api/setup';
+        return new Promise(() => {}); // Wait for redirect
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text();
     // Try to parse a structured Lidarr error and attach it to the thrown error
