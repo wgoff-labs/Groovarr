@@ -38,7 +38,7 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		addedBy := "manual"
-		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy, 0)
+		id, err := store.ArtistAdd(req.Name, "", 0, req.RootFolder, addedBy)
 		if err != nil {
 			http.Error(w, "failed to add artist: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
 			return
@@ -245,95 +245,6 @@ func PruneHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
-}
-
-// SetupHandler handles the initial setup page.
-// GET /api/setup → returns the setup form HTML or redirects if already configured
-// POST /api/setup → saves auth credentials to the database and returns JSON success
-func SetupHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		// Check if auth is already configured
-		cfg := config.Load()
-		if cfg.AuthUsername != "" && cfg.AuthPassword != "" {
-			// Already configured, redirect to dashboard
-			w.Header().Set("Location", "/")
-			w.WriteHeader(http.StatusFound)
-			return
-		}
-		// Return setup form
-		setupHTML := `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Groovarr Initial Setup</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background: #0d1117; color: #e8e8e8; }
-        .max-w-2xl { max-width: 24rem; margin auto; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 2rem; margin-bottom: 1rem; }
-        input { width: 100%; padding: 0.5rem; margin-bottom: 1rem; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #e8e8e8; }
-        button { width: 100%; padding: 0.75rem; background: #e8e8e8; color: #0d1117; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #f0f0f0; }
-        .error { color: #f04747; margin-bottom: 1rem; }
-    </style>
-</head>
-<body>
-    <div class="max-w-2xl mx-auto">
-        <h1>Groovarr Initial Setup</h1>
-        <p class="text-sm text-gray-600 mb-6">Set up your admin credentials to secure the Groovarr API and UI.</p>
-        <div class="card">
-            <h2>Admin Credentials</h2>
-            <form method="POST" action="/api/setup">
-                <div class="mb-3">
-                    <label class="text-sm text-gray-400 mb-1">Username</label>
-                    <input type="text" name="username" required autocomplete="username" />
-                </div>
-                <div class="mb-3">
-                    <label class="text-sm text-gray-400 mb-1">Password</label>
-                    <input type="password" name="password" required autocomplete="new-password" />
-                </div>
-                <button type="submit">Save Credentials and Continue</button>
-            </form>
-        </div>
-    </div>
-</body>
-</html>`;
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(setupHTML))
-	case http.MethodPost:
-		// Parse the form data
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "failed to parse form", http.StatusBadRequest)
-			return
-		}
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-
-		if username == "" || password == "" {
-			http.Error(w, "username and password are required", http.StatusBadRequest)
-			return
-		}
-
-		// Save credentials to the database
-		err := store.SettingUpdate("auth_username", username)
-		if err != nil {
-			http.Error(w, "failed to save username: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
-			return
-		}
-		err = store.SettingUpdate("auth_password", password)
-		if err != nil {
-			http.Error(w, "failed to save password: "+config.SanitizeError(err.Error()), http.StatusInternalServerError)
-			return
-		}
-
-		// Return JSON success so the frontend can navigate to / (dashboard) properly
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok": true}`))
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
 }
 
 // SettingsHandler gets or sets simple settings.

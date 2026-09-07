@@ -179,10 +179,12 @@ async function fetchJSON<T>(path: string, opts?: RequestInit): Promise<T> {
     },
   });
 
-  if (res.headers.get('Content-Type')?.includes('text/html')) {
-    if (typeof window !== 'undefined') {
-        window.location.href = '/api/setup';
-        return new Promise(() => {}); // Wait for redirect
+  // Handle redirects (3xx) - follow the Location header
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('Location');
+    if (location && typeof window !== 'undefined') {
+      window.location.href = location;
+      return new Promise(() => {}); // Wait for navigation
     }
   }
 
