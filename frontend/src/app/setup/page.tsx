@@ -8,6 +8,7 @@ export default function SetupPage() {
   const [configured, setConfigured] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+const BASE = "";
   const [error, setError] = useState<string | null>(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -31,9 +32,27 @@ export default function SetupPage() {
     setError(null)
 
     try {
-      // Save credentials to the database
-      await api.settings.set('auth_username', username)
-      await api.settings.set('auth_password', password)
+      // Save credentials to the database via /api/setup
+      const res = await fetch(`${BASE}/api/setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          username,
+          password,
+        }),
+      })
+
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`Failed to save: ${res.status} ${text}`)
+      }
+
+      const data = await res.json()
+      if (data.ok !== true) {
+        throw new Error(`Server returned: ${JSON.stringify(data)}`)
+      }
 
       setSaved(true)
       setTimeout(() => {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -248,10 +249,78 @@ func PruneSingleAlbum(artistID int64, albumName string, lidarrAlbumID int64) *Pr
 	}
 }
 
-// CheckDownloads finds pending albums that have finished downloading and auto-prunes them.
+// CheckDownloads finds albums in Lidarr that have finished downloading and auto-prunes
+// below-threshold tracks. It iterates over known artists, checks their Lidarr albums for
+// downloaded tracks, and invokes the pruning logic for any album with completed downloads.
+//
+// The function:
+//   1. Loads config and creates a Lidarr client via config.Load() (same as PruneDownloadedAlbums).
+//   2. Retrieves all tracked artists from the store.
+//   3. For each artist, fetches their Lidarr albums and identifies which have downloaded tracks.
+//   4. Calls PruneSingleAlbum for any album that has finished downloading,
+//      respecting the 3-state keep/hit/prune model and the DownloadMode setting.
+//
+// Return values:
+//   - A slice of PruneResult, one per pruned album (may be empty if nothing to process).
+//   - An error if the Lidarr client cannot be initialized or artist/album data cannot be fetched.
 func CheckDownloads() ([]PruneResult, error) {
-	// Note: PendingAlbums doesn't exist in store, returning empty for now
-	return nil, nil
+	cfg := config.Load()
+
+	lidarr, err := clients.NewLidarrClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Lidarr client: %w", err)
+	}
+
+	artists, artistErr := store.ArtistList()
+	if artistErr != nil {
+		return nil, fmt.Errorf("failed to fetch artists: %w", artistErr)
+	}
+
+	if len(artists) == 0 {
+		return nil, nil
+	}
+
+	var results []PruneResult
+
+	for _, artist := range artists {
+		if artist.LidarrID == nil || *artist.LidarrID == 0 {
+			continue
+		}
+
+		// Only prune in tracks mode.
+		mode, _ := store.SettingGet("mode_" + artist.Name)
+		if mode == "" {
+			mode = cfg.DownloadMode
+		}
+		if mode != "tracks" {
+			continue
+		}
+
+		lidarrAlbums, err := lidarr.GetArtistAlbums(*artist.LidarrID)
+		if err != nil || len(lidarrAlbums) == 0 {
+			continue
+		}
+
+		for _, la := range lidarrAlbums {
+			tracks, err := lidarr.GetAlbumTracks(la.ID)
+			if err != nil || len(tracks) == 0 {
+				continue
+			}
+
+			downloaded := filterDownloadedTracks(tracks)
+			if len(downloaded) == 0 {
+				continue
+			}
+
+			// Run the single-album pruning logic
+			pruneResult := PruneSingleAlbum(artist.ID, la.Title, la.ID)
+			if pruneResult.Error == "" {
+				results = append(results, *pruneResult)
+			}
+		}
+	}
+
+	return results, nil
 }
 
 func filterDownloadedTracks(tracks []clients.LidarrTrack) []clients.LidarrTrack {
